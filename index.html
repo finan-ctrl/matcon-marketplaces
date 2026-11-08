@@ -216,7 +216,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
    a segurança vem do RLS (só usuários logados acessam).
    ===================================================================== */
 const SUPABASE_URL = 'https://wyahuunhvqtqgbbmowlp.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_mOm5Q_zRT-8ZgTJVSSzxDw_8rAJmKIA';
+const SUPABASE_ANON_KEY = 'sb_publishable_u_7v6BreWQmTh8-vi8fXNQ_cLa4CawU';
 </script>
 
 <script>
@@ -513,7 +513,8 @@ const isAcao = s => s==='Inativar' || s==='Dif' || s==='Subir';
 
 /* ============================ SUPABASE ============================ */
 function getConfig(){
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) return { url:SUPABASE_URL, key:SUPABASE_ANON_KEY, fixed:true };
+  const U=String(SUPABASE_URL).trim().replace(/\/+$/,''), K=String(SUPABASE_ANON_KEY).replace(/\s+/g,'');
+  if (U && K) return { url:U, key:K, fixed:true };
   try { const c = JSON.parse(localStorage.getItem('matcon_sb')||'null'); if (c && c.url && c.key) return c; } catch(e){}
   return null;
 }
@@ -539,7 +540,13 @@ async function doLogin(){
   $('#lgErr').textContent=''; $('#lgBtn').disabled=true;
   const { data, error } = await S.sb.auth.signInWithPassword({ email, password });
   $('#lgBtn').disabled=false;
-  if (error){ $('#lgErr').textContent = 'Não foi possível entrar: ' + (error.message==='Invalid login credentials' ? 'e-mail ou senha incorretos.' : error.message); return; }
+  if (error){
+    const m = error.message==='Invalid login credentials' ? 'e-mail ou senha incorretos.'
+      : /invalid api key/i.test(error.message) ? 'a chave do Supabase (anon key) está errada ou é de outro projeto. Clique em Conexão e confira.'
+      : /email not confirmed/i.test(error.message) ? 'usuário ainda não confirmado. No Supabase, recrie o usuário marcando Auto Confirm User.'
+      : error.message;
+    $('#lgErr').textContent = 'Não foi possível entrar: ' + m; return;
+  }
   S.user = data.user; showApp(); await loadAll();
 }
 $('#lgPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
@@ -1165,7 +1172,7 @@ function openConfig(){
   </div></div>`;
 }
 function saveConfig(){
-  const url=$('#cfgUrl').value.trim().replace(/\/$/,''), key=$('#cfgKey').value.trim();
+  const url=$('#cfgUrl').value.trim().replace(/\/+$/,''), key=$('#cfgKey').value.replace(/\s+/g,'');
   if(!url||!key){ toast('Preencha URL e chave'); return; }
   localStorage.setItem('matcon_sb', JSON.stringify({url,key})); location.reload();
 }
