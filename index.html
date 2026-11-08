@@ -774,8 +774,8 @@ function drawMPCharts(mp){
   const dep={}; S.res.linhas.forEach(l=>{ const s=l.mp[mp].status; if(!isAcao(s)) return; const d=l.departamento||'(sem departamento)'; (dep[d] ||= {Inativar:0,Dif:0,Subir:0,t:0}); dep[d][s]++; dep[d].t++; });
   const top = Object.entries(dep).sort((a,b)=>b[1].t-a[1].t).slice(0,8);
   S.charts.dep = new Chart($('#chDep'), { type:'bar',
-    data:{ labels:top.map(t=>t[0].length>22?t[0].slice(0,21)+'…':t[0]), datasets:['Inativar','Dif','Subir'].map(st=>({ label:STATUS_LABEL[st], data:top.map(t=>t[1][st]), backgroundColor:ST_COLOR[st], borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:14 })) },
-    options:{ indexAxis:'y', maintainAspectRatio:false, scales:{ x:{stacked:true,grid:{color:gridC},border:{display:false}}, y:{stacked:true,grid:{display:false},border:{display:false}} },
+    data:{ labels:top.map(t=>t[0]), datasets:['Inativar','Dif','Subir'].map(st=>({ label:STATUS_LABEL[st], data:top.map(t=>t[1][st]), backgroundColor:ST_COLOR[st], borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:14 })) },
+    options:{ indexAxis:'y', maintainAspectRatio:false, scales:{ x:{stacked:true,grid:{color:gridC},border:{display:false}}, y:{stacked:true,grid:{display:false},border:{display:false},ticks:{crossAlign:'far',autoSkip:false}} },
       plugins:{ tooltip:{ mode:'index', callbacks:{ title:i=>top[i[0].dataIndex][0], label:c=>` ${c.dataset.label}: ${fN(c.raw)}` } } } } });
 }
 function mpRows(mp){
