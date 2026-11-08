@@ -216,7 +216,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
    a segurança vem do RLS (só usuários logados acessam).
    ===================================================================== */
 const SUPABASE_URL = 'https://wyahuunhvqtqgbbmowlp.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_u_7v6BreWQmTh8-vi8fXNQ_cLa4CawU';
+const SUPABASE_ANON_KEY = 'sb_publishable_mOm5Q_zRT-8ZgTJVSSzxDw_8rAJmKIA';
 </script>
 
 <script>
@@ -646,7 +646,7 @@ function renderGeral(){
       <div class="card-h"><div><h3>Resumo por marketplace</h3><div class="sub">Mesma lógica do Simulador · Final = preço igual + subir · clique em um número para abrir a lista</div></div>
       <button class="btn sm" onclick="exportResumo()">Exportar</button></div>
       <table class="tbl">
-        <thead><tr><th style="width:22%">Marketplace</th><th class="n">Ativos</th><th class="n">Inativar</th><th class="n">Preço dif.</th><th class="n">Preço igual</th><th class="n">Subir</th><th class="n">Final</th><th class="n hs">Pendentes</th></tr></thead>
+        <colgroup><col style="width:18%"><col style="width:10%"><col style="width:10%"><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:11%"><col class="hs" style="width:13%"></colgroup><thead><tr><th>Marketplace</th><th class="n">Ativos</th><th class="n">Inativar</th><th class="n">Preço dif.</th><th class="n">Preço igual</th><th class="n">Subir</th><th class="n">Final</th><th class="n hs">Pendentes</th></tr></thead>
         <tbody>
           <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
           ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','acoes')`,'Ver todas as ações '+x.nome)}</td><td class="n">${L(fN(r.ativos),'ativos','Ativos')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${L(fN(r.Dif),'Dif','Preço diferente')}</td><td class="n">${L(fN(r.Igual),'Igual','Preço igual')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final (igual + subir)')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
@@ -808,12 +808,12 @@ function drawMPTable(mp){
     {k:'chk', t:'✓', w:'38px', c:'c', ns:true},
     {k:'sku', t:'SKU', w:'11%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'13%', cls:'hs'},
+    {k:'dep', t:'Departamento', w:'12%', cls:'hs'},
     {k:'stock', t:'Estoque', w:'7%', n:1, cls:'hx'},
     {k:'price', t:'Preço site', w:'9%', n:1},
     {k:'ativo', t:'Preço MP', w:'9%', n:1},
     {k:'frete', t:mp==='shopee'?'Fixo':'Frete', w:'7%', n:1, cls:'hs'},
-    {k:'pct', t:'Custo %', w:'7%', n:1},
+    {k:'pct', t:'Custo %', w:'8%', n:1},
     {k:'st', t:'Ação', w:'13%'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
