@@ -30,7 +30,7 @@ header{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0
 .hbar img{height:26px;display:block}
 .hbar .tag{font:600 11px Inter;color:var(--ink-2);border-left:1px solid var(--line);padding-left:14px;text-transform:uppercase;letter-spacing:.08em}
 .hbar .sp{flex:1}
-.hbar .who{font-size:12px;color:var(--ink-2);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.hbar .who{font-size:12px;color:var(--ink-2);text-align:right;overflow-wrap:anywhere}
 nav{display:flex;gap:2px;padding:0 24px;flex-wrap:wrap}
 nav button{background:none;border:0;padding:10px 14px 12px;color:var(--ink-2);font-weight:600;cursor:pointer;border-bottom:3px solid transparent}
 nav button:hover{color:var(--ink)}
@@ -77,17 +77,19 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 
 /* ---------- tables (sem rolagem lateral) ---------- */
 .tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
-.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);font-weight:700;text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
+.tbl th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-2);font-weight:700;text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.25;vertical-align:bottom;overflow-wrap:normal;hyphens:none;user-select:none}
 .tbl th.s{cursor:pointer}
 .tbl th.s:hover{color:var(--ink)}
-.tbl td{padding:7px 8px;border-bottom:1px solid var(--line-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.tbl td{padding:7px 6px;border-bottom:1px solid var(--line-2);white-space:normal;overflow-wrap:anywhere;line-height:1.35;vertical-align:middle}
+.tbl td.n{overflow-wrap:normal;white-space:nowrap}
+@media(max-width:1300px){.tbl td,.tbl th{padding-left:5px;padding-right:5px}}
 .tbl tr:hover td{background:#fafaf7}
 .tbl .n{text-align:right;font-variant-numeric:tabular-nums}
 .tbl .c{text-align:center}
 .tbl tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
 .tbl td.wrap{white-space:normal}
 .tbl.hw th{white-space:normal;line-height:1.25;vertical-align:bottom}
-@media(max-width:1500px){.tbl .hm{display:none}}
+@media(max-width:1200px){.tbl .hm{display:none}}
 @media(max-width:900px){.tbl .hs{display:none}}
 @media(max-width:640px){.tbl .hx{display:none}}
 .lnk{color:inherit;text-decoration:underline dotted #b5b4ad;text-underline-offset:3px;cursor:pointer;border-radius:4px;padding:1px 3px;margin:-1px -3px}
@@ -95,13 +97,16 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .muted{color:var(--ink-3)}
 
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:#f1f1ed;color:var(--ink-2);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:10px;background:#f1f1ed;color:var(--ink-2);max-width:100%;line-height:1.3}
 .pill::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--st-none);flex:none}
 .pill.Inativar{background:#fdeceb;color:#a32221}.pill.Inativar::before{background:var(--st-inativar)}
 .pill.Dif{background:#fdf3dc;color:#7a5300}.pill.Dif::before{background:var(--st-dif)}
 .pill.Igual{background:#e3f2e3;color:#005c00}.pill.Igual::before{background:var(--st-igual)}
 .pill.Subir{background:#e3eefb;color:#1c4f8f}.pill.Subir::before{background:var(--st-subir)}
-.chipc{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;background:#f1f1ed;color:var(--ink-2);margin-right:3px;border:1px solid var(--line)}
+.chipc{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;margin:1px 3px 1px 0;line-height:1.4;white-space:nowrap}
+.chipc.meli{background:#FFE600;color:#2D3277}
+.chipc.shopee{background:#EE4D2D;color:#fff}
+.chipc.magalu{background:#0086FF;color:#fff}
 .pill.ok{background:var(--brand-l);color:#476000}.pill.ok::before{background:var(--brand)}
 
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
@@ -124,7 +129,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 /* bar list (motivos) */
 .bars{display:flex;flex-direction:column;gap:9px}
 .bar-row{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 64px;gap:10px;align-items:center;font-size:12.5px}
-.bar-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+.bar-row .nm{color:var(--ink-2);line-height:1.25}
 .bar-row .tr{height:12px;background:var(--line-2);border-radius:4px;overflow:hidden}
 .bar-row .fl{height:100%;background:var(--ink);border-radius:0 4px 4px 0}
 .bar-row .vl{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
@@ -500,6 +505,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fN = (v,d=0) => v==null||isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fR = v => v==null||isNaN(v) ? '—' : 'R$ ' + fN(v,2);
+const fM = v => v==null||isNaN(v) ? '—' : fN(v,2);
 const fP = (v,d=1) => v==null||isNaN(v) ? '—' : fN(v*100,d) + '%';
 const fD = d => d ? new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
 const fDs = d => d ? new Date(d).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
@@ -782,7 +788,7 @@ function ocOptions(mp){
 function outrosCanais(sku, l, mp){
   return MARKETPLACES.filter(m=>m.id!==mp && (l ? l.mp[m.id].ativo>0 : (S.res.orfaos[m.id]||[]).some(o=>o.sku===sku))).map(m=>m.id);
 }
-function chipsCanais(ids){ return ids.map(id=>`<span class="chipc" title="Ativo no ${MPN[id]}">${MPS[id]}</span>`).join('') || '<span class="muted">—</span>'; }
+function chipsCanais(ids){ return ids.map(id=>`<span class="chipc ${id}" title="Ativo no ${MPN[id]}">${MPS[id]}</span>`).join('') || '<span class="muted">—</span>'; }
 function setMPf(mp,k,v){ const f=S.f[mp]; f[k] = (k==='st' && f.st===v) ? 'acoes' : v; f.page=0; renderMP(mp); }
 function drawMPCharts(mp){
   // histograma
@@ -831,19 +837,19 @@ function mpRows(mp){
 function drawMPTable(mp){
   const f=S.f[mp]; const rows=mpRows(mp);
   const cols = [
-    {k:'chk', t:'✓', w:'34px', c:'c', ns:true},
-    {k:'sku', t:'SKU', w:'7.5%'},
+    {k:'chk', t:'✓', w:'30px', c:'c', ns:true},
+    {k:'sku', t:'SKU', w:'6.5%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'9%', cls:'hm'},
-    {k:'stock', t:'Estoque', w:'6.5%', n:1, cls:'hs'},
-    {k:'pde', t:'Preço De', w:'7.5%', n:1, cls:'hx'},
-    {k:'ppor', t:'Preço Por', w:'7.5%', n:1},
-    {k:'ativo', t:'Preço Canal', w:'7.5%', n:1},
-    {k:'frete', t:mp==='shopee'?'Fixo':'Frete', w:'6.5%', n:1, cls:'hs'},
-    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão ('+fP(S.P[mp].com,1)+')', w:'8%', n:1, cls:'hx'},
-    {k:'pct', t:'Comissão Estimada %', w:'8.5%', n:1},
-    {k:'st', t:'Ação', w:'9.5%'},
-    {k:'oc', t:'Ativo em outros canais', w:'11%', cls:'hx'}
+    {k:'dep', t:'Departamento', w:'8.5%', cls:'hm'},
+    {k:'stock', t:'Estoque', w:'5%', n:1, cls:'hm'},
+    {k:'pde', t:'Preço De (R$)', w:'7%', n:1, cls:'hx'},
+    {k:'ppor', t:'Preço Por (R$)', w:'7%', n:1},
+    {k:'ativo', t:'Preço Canal (R$)', w:'7%', n:1},
+    {k:'frete', t:mp==='shopee'?'Fixo (R$)':'Frete (R$)', w:'5.5%', n:1, cls:'hs'},
+    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(S.P[mp].com,1)+' (R$)', w:'7%', n:1, cls:'hx'},
+    {k:'pct', t:'Comissão Estimada %', w:'7.5%', n:1},
+    {k:'st', t:'Ação', w:'8.5%'},
+    {k:'oc', t:'Ativo em outros canais', w:'9%', cls:'hx'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
@@ -855,7 +861,7 @@ function drawMPTable(mp){
     const done = r.orfao ? !!S.acoes[acaoKey(r.sku,mp)]?.concluido : isDone(r.l,mp);
     const chk = isAcao(s) ? `<input type="checkbox" class="chk" ${done?'checked':''} onchange="toggleAcao('${mp}','${esc(r.sku)}','${s}',this.checked)" title="Marcar ação como concluída">` : '';
     const dif = r.ativo!=null && r.ppor!=null && Math.round(r.ativo*100)!==Math.round(r.ppor*100);
-    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hm" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hs">${fN(r.stock)}</td><td class="n hx">${fR(r.pde)}</td><td class="n">${fR(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fR(r.ativo)}</td><td class="n hs">${fR(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por = '+fR(r.l.mp[mp].comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fR(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
+    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hm" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hm">${fN(r.stock)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td><td class="n hs">${fM(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por = '+fR(r.l.mp[mp].comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
   const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (comissão alta)', todos:'Todos os SKUs' }[f.st];
@@ -941,13 +947,13 @@ function catRows(){
 }
 function drawCat(){
   const f=S.f.cat, rows=catRows();
-  const cols=[{k:'sku',t:'SKU',w:'11%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'10%',cls:'hs'},{k:'peso',t:'Peso kg',w:'7%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'8%',n:1,cls:'hs'},{k:'pde',t:'Preço De',w:'8%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por',w:'8%',n:1},{k:'stock',t:'Estoque',w:'7%',n:1,cls:'hx'},{k:'mot',t:'Situação',w:'22%'}];
+  const cols=[{k:'sku',t:'SKU',w:'11%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'10%',cls:'hs'},{k:'peso',t:'Peso kg',w:'7%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'8%',n:1,cls:'hs'},{k:'pde',t:'Preço De (R$)',w:'8%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por (R$)',w:'8%',n:1},{k:'stock',t:'Estoque',w:'7%',n:1,cls:'hx'},{k:'mot',t:'Situação',w:'22%'}];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per,f.page*per+per);
   $('#catTable').innerHTML = `<table class="tbl"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="s ${c.n?'n':''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
-  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fR(r.pde)}</td><td class="n">${fR(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
+  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgCat(')}`;
   $('#catListTit').textContent = `SKUs do catálogo — ${fN(rows.length)}`;
   $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawCat(); });
