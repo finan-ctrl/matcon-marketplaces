@@ -199,15 +199,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
     <span><b>Modo local:</b> os dados ficam só nesta aba e somem ao recarregar. Configure o Supabase para gravar.</span>
     <button class="btn sm" onclick="openConfig()">Configurar Supabase</button>
   </div>
-  <nav id="nav">
-    <button data-tab="geral" class="on">Visão geral</button>
-    <button data-tab="shopee">Shopee</button>
-    <button data-tab="meli">Mercado Livre</button>
-    <button data-tab="magalu">Magalu</button>
-    <button data-tab="catalogo">Catálogo</button>
-    <button data-tab="premissas">Premissas</button>
-    <button data-tab="cargas">Cargas</button>
-  </nav>
+  <nav id="nav"></nav>
 </header>
 <main id="main"></main>
 </div>
@@ -276,6 +268,7 @@ const DEFAULT_PREMISSAS = {
       [7.75,11.15,12.35,65.95,75.45,85.55,96.25,106.95]
     ]
   },
+  canais_extra: [],     // canais cadastrados em Premissas: {id,nome,anymarket,sigla,cor_fundo,cor_fonte,com,fixo,faixas_peso[],valores[]}
   magalu: {
     com: 0.148,
     faixas_peso: [0.5,1,2,5,9,13,17,23,30],
@@ -283,17 +276,28 @@ const DEFAULT_PREMISSAS = {
   }
 };
 
-const MARKETPLACES = [
-  { id: 'shopee', nome: 'Shopee',        any: ['shopee'] },
-  { id: 'meli',   nome: 'Mercado Livre', any: ['mercado livre','mercadolivre','meli'] },
-  { id: 'magalu', nome: 'Magalu',        any: ['magazine luiza','magalu'] }
+const MARKETPLACES_BASE = [
+  { id: 'shopee', nome: 'Shopee',        any: ['shopee'],                               sigla:'Shopee', bg:'#EE4D2D', fg:'#ffffff' },
+  { id: 'meli',   nome: 'Mercado Livre', any: ['mercado livre','mercadolivre','meli'], sigla:'ML',     bg:'#FFE600', fg:'#2D3277' },
+  { id: 'magalu', nome: 'Magalu',        any: ['magazine luiza','magalu'],             sigla:'Magalu', bg:'#0086FF', fg:'#ffffff' }
 ];
+const MARKETPLACES = [...MARKETPLACES_BASE];
+/* Atualiza a lista de canais com os cadastrados nas premissas */
+function setCanais(P){
+  MARKETPLACES.length = 0;
+  MARKETPLACES.push(...MARKETPLACES_BASE);
+  for (const c of (P.canais_extra||[])){
+    if (!c.id || !c.nome) continue;
+    MARKETPLACES.push({ id:c.id, nome:c.nome, any:[String(c.anymarket||c.nome).trim().toLowerCase()].filter(Boolean), sigla:c.sigla||c.nome, bg:c.cor_fundo||'#52514e', fg:c.cor_fonte||'#ffffff', extra:true });
+  }
+}
+function canalExtra(P, id){ return (P.canais_extra||[]).find(c=>c.id===id); }
 const STATUS = ['Inativar','Dif','Igual','Subir'];
 const STATUS_LABEL = { Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir' };
 
 function mpFromAnymarket(nome){
   const n = String(nome||'').trim().toLowerCase();
-  const m = MARKETPLACES.find(mp => mp.any.some(a => n.includes(a)));
+  const m = MARKETPLACES.find(mp => mp.any.some(a => n === a)) || MARKETPLACES.find(mp => mp.any.some(a => n.includes(a)));
   return m ? m.id : (n || 'outro');
 }
 
@@ -421,8 +425,24 @@ function statusMP(eleg, ativo, pct, preco, P){
   return '';
 }
 
+function custoExtra(id, preco, peso, P){
+  const c = canalExtra(P, id) || {};
+  const fp = (c.faixas_peso||[]).map(Number), vs = (c.valores||[]).map(Number);
+  let frete = 0;
+  if (fp.length){ const i = fp.findIndex(l => (peso||0) <= l); frete = i < 0 ? null : (vs[i] ?? 0); }
+  const com = Number(c.com)||0, fixo = Number(c.fixo)||0;
+  return { frete, fixo, com, pct: frete===null ? null : (com*preco + fixo + frete)/preco };
+}
+function custoCanal(id, preco, peso, P){
+  if (id==='shopee') return custoShopee(preco, P);
+  if (id==='meli')   return custoMeli(preco, peso, P);
+  if (id==='magalu') return custoMagalu(preco, peso, P);
+  return custoExtra(id, preco, peso, P);
+}
+
 /* ---------- cálculo completo ---------- */
 function calcula(produtos, anuncios, P){
+  setCanais(P);
   // preço ativo por SKU/marketplace (menor PREÇO POR quando houver duplicidade)
   const ativos = {}; const outros = {};
   for (const a of anuncios){
@@ -441,13 +461,8 @@ function calcula(produtos, anuncios, P){
     const e = elegibilidade(p, P);
     const preco = precoRef(p);
     const L = { ...p, preco_ref: preco, elegivel: e.elegivel, motivos: e.motivos, incompleto: e.incompleto, mp: {} };
-    const custos = {
-      shopee: e.elegivel ? custoShopee(preco, P) : null,
-      meli:   e.elegivel ? custoMeli(preco, p.peso, P) : null,
-      magalu: e.elegivel ? custoMagalu(preco, p.peso, P) : null
-    };
     for (const m of MARKETPLACES){
-      const c = custos[m.id];
+      const c = e.elegivel ? custoCanal(m.id, preco, p.peso, P) : null;
       const ativo = ativos[m.id+'|'+p.sku] ?? null;
       L.mp[m.id] = {
         ativo, frete: c?c.frete:null, com: c?c.com:null, fixo: c?c.fixo:null, pct: c?c.pct:null,
@@ -484,7 +499,7 @@ function resumo(res){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -497,7 +512,8 @@ const S = {
   res:null, sum:null, tab:'geral',
   f:{}, charts:{}
 };
-const MPN = Object.fromEntries(MARKETPLACES.map(m=>[m.id,m.nome]));
+let MPN = {}, MPS = {};
+function refreshCanais(){ MPN = Object.fromEntries(MARKETPLACES.map(m=>[m.id,m.nome])); MPS = Object.fromEntries(MARKETPLACES.map(m=>[m.id,m.sigla])); buildNav(); }
 const ST_COLOR = { Inativar:'#e34948', Dif:'#eda100', Igual:'#008300', Subir:'#2a78d6' };
 
 /* ============================ UTIL ============================ */
@@ -605,6 +621,7 @@ function mergeP(d){
 function recalc(){
   S.res = calcula(S.produtos, S.anuncios, S.P);
   S.sum = resumo(S.res);
+  refreshCanais();
   S.deps = [...new Set(S.res.linhas.map(l=>l.departamento).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
 function pendentes(mp){
@@ -613,7 +630,15 @@ function pendentes(mp){
 }
 
 /* ============================ NAV / RENDER ============================ */
-document.querySelectorAll('#nav button').forEach(b => b.onclick = () => { S.tab=b.dataset.tab; document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b)); render(); window.scrollTo(0,0); });
+function buildNav(){
+  const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['premissas','Premissas'], ['cargas','Cargas']];
+  if (!tabs.some(t=>t[0]===S.tab) && S.tab!=='outros') S.tab='geral';
+  $('#nav').innerHTML = tabs.map(([id,t])=>`<button data-tab="${id}" class="${S.tab===id?'on':''}">${esc(t)}</button>`).join('');
+  document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
+    if (S.tab==='premissas' && b.dataset.tab!=='premissas') S.Pd = null;
+    S.tab=b.dataset.tab; document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b)); render(); window.scrollTo(0,0);
+  });
+}
 function destroyCharts(){ Object.values(S.charts).forEach(c=>c.destroy()); S.charts={}; }
 function render(){
   destroyCharts();
@@ -667,7 +692,7 @@ function renderGeral(){
         <tbody>
           <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
           ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','acoes')`,'Ver todas as ações '+x.nome)}</td><td class="n">${L(fN(r.ativos),'ativos','Ativos')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${L(fN(r.Dif),'Dif','Preço diferente')}</td><td class="n">${L(fN(r.Igual),'Igual','Preço igual')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final (igual + subir)')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
-          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· sem regras</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td class="n muted" colspan="6" style="text-align:left">Cadastre as regras em Premissas para analisar</td></tr>`).join('')}
+          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· sem regras</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="6" style="text-align:left" class="muted">Canal sem regras de comissão · ${lk('<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
         </tbody>
       </table>
     </div>
@@ -711,7 +736,7 @@ function drawEvo(){
   const met = $('#evoMetric').value;
   const snaps = S.snapshots;
   if (snaps.length < 2){ w.innerHTML = `<div class="empty"><b>${snaps.length ? '1 fotografia registrada' : 'Sem histórico ainda'}</b>O gráfico aparece a partir da segunda carga. Cada upload registra uma fotografia do resumo.</div>`; return; }
-  const cols = { shopee:'#eb6834', meli:'#eda100', magalu:'#2a78d6' };
+  const cols = Object.fromEntries(MARKETPLACES.map(m=>[m.id, {shopee:'#eb6834', meli:'#eda100', magalu:'#2a78d6'}[m.id] || m.bg]));
   w.innerHTML = legendHTML(MARKETPLACES.map(x=>[x.nome,cols[x.id]])) + '<div class="chart-box sm"><canvas id="chEvo"></canvas></div>';
   const val = (r) => met==='pend' ? (r.Inativar+r.Dif+r.Subir) : r[met];
   S.charts.evo = new Chart($('#chEvo'), {
@@ -746,7 +771,8 @@ function renderMP(mp){
   if (!S.res.linhas.length){ m.innerHTML = head(MPN[mp],'Gestão do sortimento') + semDados(); return; }
   const r=S.sum.mp[mp];
   const f = S.f[mp] ||= { q:'', st:'acoes', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
-  const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : `Comissão ${fP(S.P.magalu.com)} + frete por peso`;
+  const cx = canalExtra(S.P, mp);
+  const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : mp==='magalu' ? `Comissão ${fP(S.P.magalu.com)} + frete por peso` : `Comissão ${fP(cx?.com)}${cx?.fixo?' + fixo '+fR(cx.fixo):''}${(cx?.faixas_peso||[]).length?' + frete por peso':''}`;
   const card = (st, lb, v, d) => `<div class="card kpi click ${f.st===st?'sel':''}" onclick="setMPf('${mp}','st','${st}')"><div class="lb">${st in ST_COLOR?`<span class="dot" style="background:${ST_COLOR[st]}"></span>`:''}${lb}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
   const pend = st => S.res.linhas.filter(l=>l.mp[mp].status===st && !isDone(l,mp)).length;
   m.innerHTML = head(MPN[mp], regra + ' · comissão estimada máxima de ' + fP(S.P.comissao_max,0) + ' · preço de referência = Preço Por do site') + `
@@ -758,7 +784,7 @@ function renderMP(mp){
     ${card('Subir','Subir', fN(r.Subir), fN(pend('Subir'))+' pendentes')}
   </div>
   <div class="grid g2" style="margin-bottom:16px">
-    <div class="card"><h3>Comissão estimada dos SKUs elegíveis</h3><div class="sub">(comissão + ${mp==='shopee'?'fixo':'frete'}) ÷ Preço Por · barras cinza passam de ${fP(S.P.comissao_max,0)} e ficam de fora</div><div class="chart-box sm"><canvas id="chHist"></canvas></div></div>
+    <div class="card"><h3>Comissão estimada dos SKUs elegíveis</h3><div class="sub">(comissão + ${mp==='shopee'?'fixo':isExtra(mp)?'fixo + frete':'frete'}) ÷ Preço Por · barras cinza passam de ${fP(S.P.comissao_max,0)} e ficam de fora</div><div class="chart-box sm"><canvas id="chHist"></canvas></div></div>
     <div class="card"><h3>Onde estão as ações</h3><div class="sub">Top departamentos por quantidade de SKUs em cada ação</div>${legendHTML(['Inativar','Dif','Subir'].map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}<div class="chart-box sm"><canvas id="chDep"></canvas></div></div>
   </div>
   <div class="card" id="mpList">
@@ -779,16 +805,18 @@ function renderMP(mp){
   $('#foc').onchange = e => { f.oc=e.target.value; f.page=0; drawMPTable(mp); };
   drawMPCharts(mp); drawMPTable(mp);
 }
-const MPS = { shopee:'Shopee', meli:'ML', magalu:'Magalu' };
 function ocOptions(mp){
   const o = MARKETPLACES.filter(m=>m.id!==mp);
   return [['','Todos os canais'],['algum','Ativo em outro canal'],['nenhum','Só neste canal'],
-    ...o.map(m=>['mp:'+m.id,'Ativo no '+m.nome]), ['todos2','Ativo em '+o.map(m=>MPS[m.id]).join(' e ')]];
+    ...o.map(m=>['mp:'+m.id,'Ativo no '+m.nome]), ['todos2', o.length===2 ? 'Ativo em '+o.map(m=>MPS[m.id]).join(' e ') : 'Ativo em todos os outros canais']];
 }
 function outrosCanais(sku, l, mp){
   return MARKETPLACES.filter(m=>m.id!==mp && (l ? l.mp[m.id].ativo>0 : (S.res.orfaos[m.id]||[]).some(o=>o.sku===sku))).map(m=>m.id);
 }
-function chipsCanais(ids){ return ids.map(id=>`<span class="chipc ${id}" title="Ativo no ${MPN[id]}">${MPS[id]}</span>`).join('') || '<span class="muted">—</span>'; }
+function chipCanal(id){ const m=MARKETPLACES.find(x=>x.id===id); return m ? `<span class="chipc" style="background:${esc(m.bg)};color:${esc(m.fg)}" title="Ativo no ${esc(m.nome)}">${esc(m.sigla)}</span>` : ''; }
+function chipsCanais(ids){ return ids.map(chipCanal).join('') || '<span class="muted">—</span>'; }
+function canalCom(mp){ return mp in DEFAULT_PREMISSAS ? S.P[mp].com : (canalExtra(S.P,mp)?.com ?? 0); }
+function isExtra(mp){ return !!MARKETPLACES.find(m=>m.id===mp)?.extra; }
 function setMPf(mp,k,v){ const f=S.f[mp]; f[k] = (k==='st' && f.st===v) ? 'acoes' : v; f.page=0; renderMP(mp); }
 function drawMPCharts(mp){
   // histograma
@@ -820,7 +848,7 @@ function mpRows(mp){
     if (f.pend && (!isAcao(s) || isDone(l,mp))) return false;
     if (q && !(l.sku.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || l.marca.toLowerCase().includes(q) || (l.ean||'').includes(q))) return false;
     return true;
-  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete:l.mp[mp].frete ?? l.mp[mp].fixo, comissao: mp==='shopee' ? l.mp[mp].com : l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), orfao:false }));
+  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete: isExtra(mp) ? (l.mp[mp].frete==null && l.mp[mp].fixo==null ? null : (l.mp[mp].frete||0)+(l.mp[mp].fixo||0)) : (l.mp[mp].frete ?? l.mp[mp].fixo), comissao: mp==='shopee' ? l.mp[mp].com : l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), orfao:false }));
   // anúncios sem SKU no catálogo flagship
   if (['acoes','ativos','Inativar','todos'].includes(f.st) && !f.dep){
     (S.res.orfaos[mp]||[]).forEach(o=>{
@@ -845,8 +873,8 @@ function drawMPTable(mp){
     {k:'pde', t:'Preço De (R$)', w:'7%', n:1, cls:'hx'},
     {k:'ppor', t:'Preço Por (R$)', w:'7%', n:1},
     {k:'ativo', t:'Preço Canal (R$)', w:'7%', n:1},
-    {k:'frete', t:mp==='shopee'?'Fixo (R$)':'Frete (R$)', w:'5.5%', n:1, cls:'hs'},
-    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(S.P[mp].com,1)+' (R$)', w:'7%', n:1, cls:'hx'},
+    {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'5.5%', n:1, cls:'hs'},
+    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'7%', n:1, cls:'hx'},
     {k:'pct', t:'Comissão Estimada %', w:'7.5%', n:1},
     {k:'st', t:'Ação', w:'8.5%'},
     {k:'oc', t:'Ativo em outros canais', w:'9%', cls:'hx'}
@@ -988,7 +1016,7 @@ function exportOutros(){
 
 /* ======================= PREMISSAS ======================= */
 function renderPremissas(){
-  const P=S.P, m=$('#main');
+  const P = S.Pd ||= structuredClone(S.P), m=$('#main');
   const inp=(path,v,step='any',hint='')=>`<input type="number" step="${step}" data-p="${path}" value="${v}">${hint?`<div class="hint">${hint}</div>`:''}`;
   const cell=(path,v)=>`<input class="cell" type="number" step="any" data-p="${path}" value="${v}">`;
   m.innerHTML = head('Premissas','Regras usadas no cálculo — alterações valem para todos os usuários depois de salvar',
@@ -1031,10 +1059,53 @@ function renderPremissas(){
     <h3>Tabela de frete Mercado Livre</h3><div class="sub">Valor base (reputação boa) por faixa de peso × faixa de preço do site · coluna aplicada quando o Preço Por é maior que o limite inferior</div>
     <table class="tbl dense"><thead><tr><th style="width:9%">Peso até (kg)</th>${P.meli.colunas.map(c=>`<th class="n">${esc(c)}</th>`).join('')}</tr></thead>
     <tbody>${P.meli.tabela.map((row,i)=>`<tr><td>${cell(`meli.faixas_peso.${i}`,P.meli.faixas_peso[i])}</td>${row.map((v,j)=>`<td>${cell(`meli.tabela.${i}.${j}`,v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+  </div>
+  ${canaisExtraHTML(P)}`;
+  if (S.focoCanal!=null){ const el=document.getElementById('canal-'+S.focoCanal); S.focoCanal=null; if(el){ el.scrollIntoView({behavior:'smooth',block:'start'}); el.querySelector('input')?.focus({preventScroll:true}); } }
+}
+function canaisExtraHTML(P){
+  const semRegra = Object.keys(S.sum?.outros||{}).filter(n=>!(P.canais_extra||[]).some(c=>String(c.anymarket||c.nome).trim().toLowerCase()===n.trim().toLowerCase()));
+  const txt=(path,v,ph='')=>`<input type="text" data-p="${path}" data-t="s" value="${esc(v??'')}" placeholder="${esc(ph)}">`;
+  const num=(path,v,step='any',ph='')=>`<input type="number" step="${step}" data-p="${path}" value="${v??''}" placeholder="${ph}">`;
+  const cell=(path,v)=>`<input class="cell" type="number" step="any" data-p="${path}" value="${v??''}">`;
+  return `<div class="card" style="margin-top:16px" id="canaisExtra">
+    <div class="card-h"><div><h3>Outros canais</h3><div class="sub">Cadastre um marketplace novo do Anymarket. Depois de salvar, ele ganha aba própria, entra no resumo e nas etiquetas de “Ativo em outros canais”.</div></div>
+    <button class="btn" onclick="addCanal()">+ Adicionar canal</button></div>
+    ${semRegra.length?`<div class="note" style="margin-bottom:12px">Encontrado no Anymarket sem regras: ${semRegra.map(n=>`<b>${esc(n)}</b> <button class="btn sm" style="margin:0 10px 0 4px" onclick="novoCanal('${esc(n).replace(/'/g,"\\'")}')">Cadastrar regras</button>`).join('')}</div>`:''}
+    ${(P.canais_extra||[]).map((c,i)=>`<div class="card" id="canal-${i}" style="box-shadow:none;margin-top:12px;background:#fbfbf8">
+      <div class="card-h" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:10px"><h3>${esc(c.nome||'Novo canal')}</h3><span class="chipc" style="background:${esc(c.cor_fundo||'#52514e')};color:${esc(c.cor_fonte||'#fff')}">${esc(c.sigla||c.nome||'Canal')}</span></div>
+      <button class="btn sm" onclick="rmCanal(${i})">Remover canal</button></div>
+      <div class="form-grid">
+        <div class="fld"><label>Nome do canal</label>${txt(`canais_extra.${i}.nome`,c.nome,'Ex.: Leroy Merlin')}</div>
+        <div class="fld"><label>Nome na coluna MARKETPLACE do Anymarket</label>${txt(`canais_extra.${i}.anymarket`,c.anymarket,'Ex.: Leroy Merlin')}<div class="hint">Precisa ser igual ao export</div></div>
+        <div class="fld"><label>Texto da etiqueta</label>${txt(`canais_extra.${i}.sigla`,c.sigla,'Ex.: Leroy')}</div>
+        <div class="fld"><label>Cor de fundo da etiqueta</label><input type="color" data-p="canais_extra.${i}.cor_fundo" data-t="s" value="${esc(c.cor_fundo||'#52514e')}" style="height:36px;padding:3px"></div>
+        <div class="fld"><label>Cor da fonte da etiqueta</label><input type="color" data-p="canais_extra.${i}.cor_fonte" data-t="s" value="${esc(c.cor_fonte||'#ffffff')}" style="height:36px;padding:3px"></div>
+        <div class="fld"><label>Comissão</label>${num(`canais_extra.${i}.com`,c.com,'0.001','0,16')}<div class="hint">Em decimal: 0,16 = 16%</div></div>
+        <div class="fld"><label>Valor fixo por venda (R$)</label>${num(`canais_extra.${i}.fixo`,c.fixo,'any','0')}</div>
+      </div>
+      <div style="margin-top:12px;max-width:420px">
+        <div class="fld"><label>Frete por peso (opcional)</label><div class="hint" style="margin-bottom:6px">Deixe vazio se o canal não cobra frete do vendedor</div></div>
+        <table class="tbl"><thead><tr><th>Peso até (kg)</th><th class="n">Frete (R$)</th><th style="width:44px"></th></tr></thead>
+        <tbody>${(c.faixas_peso||[]).map((x,j)=>`<tr><td>${cell(`canais_extra.${i}.faixas_peso.${j}`,x)}</td><td>${cell(`canais_extra.${i}.valores.${j}`,(c.valores||[])[j])}</td><td class="c"><button class="btn sm" title="Remover faixa" onclick="rmFaixa(${i},${j})">×</button></td></tr>`).join('') || `<tr><td colspan="3" class="muted">Sem frete</td></tr>`}</tbody></table>
+        <button class="btn sm" style="margin-top:8px" onclick="addFaixa(${i})">+ Faixa de peso</button>
+      </div>
+    </div>`).join('')}
   </div>`;
 }
+function editCanais(fn, foco){ S.Pd = readPremissas(); S.Pd.canais_extra ||= []; fn(S.Pd.canais_extra); if (foco!=null) S.focoCanal = foco; renderPremissas(); }
+function addCanal(nome=''){ editCanais(c=>c.push({ id:'x_'+Date.now().toString(36), nome, anymarket:nome, sigla:nome.split(' ')[0]||'', cor_fundo:'#52514e', cor_fonte:'#ffffff', com:null, fixo:0, faixas_peso:[], valores:[] }), (S.Pd?.canais_extra||S.P.canais_extra||[]).length); }
+function rmCanal(i){ if(!confirm('Remover este canal? Ele sai das abas e do resumo depois de salvar.')) return; editCanais(c=>c.splice(i,1)); }
+function addFaixa(i){ editCanais(c=>{ c[i].faixas_peso.push(null); c[i].valores.push(null); }); }
+function rmFaixa(i,j){ editCanais(c=>{ c[i].faixas_peso.splice(j,1); c[i].valores.splice(j,1); }); }
+function novoCanal(nome){
+  if (S.tab!=='premissas'){ S.Pd=null; S.tab='premissas'; buildNav(); render(); }
+  const ja = (S.Pd.canais_extra||[]).findIndex(c=>String(c.anymarket||c.nome).trim().toLowerCase()===nome.trim().toLowerCase());
+  if (ja>=0){ S.focoCanal=ja; renderPremissas(); return; }
+  addCanal(nome);
+}
 function readPremissas(){
-  const P=structuredClone(S.P);
+  const P=structuredClone(S.Pd || S.P);
   document.querySelectorAll('[data-p]').forEach(el=>{
     const path=el.dataset.p.split('.'); let o=P; for(let i=0;i<path.length-1;i++) o=o[path[i]];
     const k=path[path.length-1]; const t=el.dataset.t;
@@ -1043,14 +1114,22 @@ function readPremissas(){
   return P;
 }
 async function savePremissas(){
-  S.P = readPremissas();
+  const P = readPremissas();
+  for (const c of (P.canais_extra||[])){
+    c.faixas_peso = c.faixas_peso.map(Number); c.valores = c.valores.map(Number);
+    if (!c.nome){ toast('Dê um nome ao canal novo antes de salvar', 4000); return; }
+    if (!(c.com > 0)){ toast(`Informe a comissão do canal ${c.nome} antes de salvar`, 4000); return; }
+    if (!c.anymarket) c.anymarket = c.nome;
+    if (!c.sigla) c.sigla = c.nome;
+  }
+  S.P = P; S.Pd = structuredClone(P);
   if (!S.local){
     const { error } = await S.sb.from('mc_premissas').upsert({ id:1, dados:S.P, usuario:S.user?.email||null, atualizado_em:new Date().toISOString() });
     if (error){ toast('Erro ao salvar: '+error.message,5000); return; }
   }
-  recalc(); toast('Premissas salvas e painéis recalculados');
+  recalc(); renderPremissas(); toast('Premissas salvas e painéis recalculados');
 }
-function resetPremissas(){ if(!confirm('Restaurar as premissas padrão do simulador?')) return; S.P=structuredClone(DEFAULT_PREMISSAS); renderPremissas(); toast('Padrão restaurado — clique em Salvar para gravar'); }
+function resetPremissas(){ if(!confirm('Restaurar as premissas padrão do simulador? Os canais cadastrados em “Outros canais” são mantidos.')) return; const ex=readPremissas().canais_extra||[]; S.Pd=structuredClone(DEFAULT_PREMISSAS); S.Pd.canais_extra=ex; renderPremissas(); toast('Padrão restaurado — clique em Salvar para gravar'); }
 
 /* ======================= CARGAS ======================= */
 function renderCargas(){
@@ -1177,7 +1256,7 @@ function baixarXLSX(nome, rows, sheet='Dados'){
   XLSX.writeFile(wb, nome + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 function exportMP(mp){
-  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Ativo em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
+  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Ativo em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
   baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp]);
 }
 function exportCat(){
