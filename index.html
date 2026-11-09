@@ -86,6 +86,8 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .tbl .c{text-align:center}
 .tbl tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
 .tbl td.wrap{white-space:normal}
+.tbl.hw th{white-space:normal;line-height:1.25;vertical-align:bottom}
+@media(max-width:1280px){.tbl .hm{display:none}}
 @media(max-width:900px){.tbl .hs{display:none}}
 @media(max-width:640px){.tbl .hx{display:none}}
 .lnk{color:inherit;text-decoration:underline dotted #b5b4ad;text-underline-offset:3px;cursor:pointer;border-radius:4px;padding:1px 3px;margin:-1px -3px}
@@ -229,7 +231,6 @@ const DEFAULT_PREMISSAS = {
   div_preco: 1000000,
   peso_max: 30,          // kg — elegível se peso < peso_max
   dim_max: 100,          // cm — elegível se altura/largura/profundidade < dim_max
-  preco_min: 80,         // R$ — elegível se preço > preco_min
   comissao_max: 0.25,    // % comissão estimada máxima
   exigir_cadastro: false,// se true, peso/dimensões vazios tornam o SKU inelegível
   shopee: {
@@ -359,14 +360,15 @@ function normalizaAnuncio(row){
 }
 
 /* ---------- regras ---------- */
+/* Preço de venda no site = Preço Por (special_price); sem ele, Preço De (price) */
+function precoRef(p){ return (p.special_price && p.special_price > 0) ? p.special_price : (p.price || 0); }
+
 function elegibilidade(p, P){
   const motivos = [];
   if (txt(p.seller_id) !== txt(P.seller_id)) motivos.push('Outro seller');
   if (p.status.toLowerCase() !== 'habilitado') motivos.push('Desabilitado');
   if (p.inflamavel.toLowerCase() === 'sim') motivos.push('Inflamável');
-  const preco = p.price || 0;
-  if (preco <= 0) motivos.push('Sem preço');
-  else if (preco <= P.preco_min) motivos.push('Preço ≤ R$ ' + P.preco_min);
+  if (precoRef(p) <= 0) motivos.push('Sem preço');
   if ((p.peso||0) >= P.peso_max) motivos.push('Peso ≥ ' + P.peso_max + ' kg');
   if ([p.altura,p.largura,p.profundidade].some(d => (d||0) >= P.dim_max)) motivos.push('Dimensão ≥ ' + P.dim_max + ' cm');
   const incompleto = [p.peso,p.altura,p.largura,p.profundidade].some(v => v===null || v===0);
@@ -431,8 +433,8 @@ function calcula(produtos, anuncios, P){
     if (txt(p.seller_id) !== txt(P.seller_id)) continue; // universo = Flagship
     catalogo.set(p.sku, true);
     const e = elegibilidade(p, P);
-    const preco = p.price || 0;
-    const L = { ...p, elegivel: e.elegivel, motivos: e.motivos, incompleto: e.incompleto, mp: {} };
+    const preco = precoRef(p);
+    const L = { ...p, preco_ref: preco, elegivel: e.elegivel, motivos: e.motivos, incompleto: e.incompleto, mp: {} };
     const custos = {
       shopee: e.elegivel ? custoShopee(preco, P) : null,
       meli:   e.elegivel ? custoMeli(preco, p.peso, P) : null,
@@ -443,6 +445,7 @@ function calcula(produtos, anuncios, P){
       const ativo = ativos[m.id+'|'+p.sku] ?? null;
       L.mp[m.id] = {
         ativo, frete: c?c.frete:null, com: c?c.com:null, fixo: c?c.fixo:null, pct: c?c.pct:null,
+        comissao: c ? r2(c.com * preco) : null,
         status: statusMP(e.elegivel, ativo, c?c.pct:null, preco, P)
       };
     }
@@ -475,7 +478,7 @@ function resumo(res){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu };
+if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -739,7 +742,7 @@ function renderMP(mp){
   const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : `Comissão ${fP(S.P.magalu.com)} + frete por peso`;
   const card = (st, lb, v, d) => `<div class="card kpi click ${f.st===st?'sel':''}" onclick="setMPf('${mp}','st','${st}')"><div class="lb">${st in ST_COLOR?`<span class="dot" style="background:${ST_COLOR[st]}"></span>`:''}${lb}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
   const pend = st => S.res.linhas.filter(l=>l.mp[mp].status===st && !isDone(l,mp)).length;
-  m.innerHTML = head(MPN[mp], regra + ' · limite de ' + fP(S.P.comissao_max,0) + ' de custo estimado') + `
+  m.innerHTML = head(MPN[mp], regra + ' · comissão estimada máxima de ' + fP(S.P.comissao_max,0) + ' · preço de referência = Preço Por do site') + `
   <div class="grid g5" style="margin-bottom:16px">
     ${card('ativos','Ativos', fN(r.ativos), 'Final projetado: '+fN(r.final))}
     ${card('Inativar','Inativar', fN(r.Inativar), fN(pend('Inativar')+(S.res.orfaos[mp]||[]).length)+' pendentes')}
@@ -748,14 +751,14 @@ function renderMP(mp){
     ${card('Subir','Subir', fN(r.Subir), fN(pend('Subir'))+' pendentes')}
   </div>
   <div class="grid g2" style="margin-bottom:16px">
-    <div class="card"><h3>Custo estimado dos SKUs elegíveis</h3><div class="sub">Distribuição de (comissão + frete/fixo) ÷ preço · barras após a linha de ${fP(S.P.comissao_max,0)} ficam de fora</div><div class="chart-box sm"><canvas id="chHist"></canvas></div></div>
+    <div class="card"><h3>Comissão estimada dos SKUs elegíveis</h3><div class="sub">(comissão + ${mp==='shopee'?'fixo':'frete'}) ÷ Preço Por · barras cinza passam de ${fP(S.P.comissao_max,0)} e ficam de fora</div><div class="chart-box sm"><canvas id="chHist"></canvas></div></div>
     <div class="card"><h3>Onde estão as ações</h3><div class="sub">Top departamentos por quantidade de SKUs em cada ação</div>${legendHTML(['Inativar','Dif','Subir'].map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}<div class="chart-box sm"><canvas id="chDep"></canvas></div></div>
   </div>
   <div class="card" id="mpList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="mpListTit"></h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportMP('${mp}')">Exportar para Excel</button></div>
     <div class="filters">
       <input type="search" id="fq" placeholder="Buscar SKU, produto, marca ou EAN" value="${esc(f.q)}">
-      <select id="fst">${[['acoes','Todas as ações'],['ativos','Ativos'],['Inativar','Inativar'],['Dif','Preço diferente'],['Igual','Preço igual'],['Subir','Subir'],['final','Final (igual + subir)'],['inviavel','Inviável (custo alto)'],['todos','Todos os SKUs']].map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
+      <select id="fst">${[['acoes','Todas as ações'],['ativos','Ativos'],['Inativar','Inativar'],['Dif','Preço diferente'],['Igual','Preço igual'],['Subir','Subir'],['final','Final (igual + subir)'],['inviavel','Inviável (comissão alta)'],['todos','Todos os SKUs']].map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
       <select id="fdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
       <label><input type="checkbox" class="chk" id="fpend" ${f.pend?'checked':''}> Só pendentes</label>
     </div>
@@ -798,13 +801,13 @@ function mpRows(mp){
     if (f.pend && (!isAcao(s) || isDone(l,mp))) return false;
     if (q && !(l.sku.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || l.marca.toLowerCase().includes(q) || (l.ean||'').includes(q))) return false;
     return true;
-  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, price:l.price, ativo:l.mp[mp].ativo, frete:l.mp[mp].frete ?? l.mp[mp].fixo, pct:l.mp[mp].pct, st:statusLabel(l,mp), orfao:false }));
+  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete:l.mp[mp].frete ?? l.mp[mp].fixo, comissao:l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), orfao:false }));
   // anúncios sem SKU no catálogo flagship
   if (['acoes','ativos','Inativar','todos'].includes(f.st) && !f.dep){
     (S.res.orfaos[mp]||[]).forEach(o=>{
       if (f.pend && S.acoes[acaoKey(o.sku,mp)]?.concluido) return;
       if (q && !o.sku.toLowerCase().includes(q)) return;
-      rows.push({ l:null, sku:o.sku, name:'(SKU fora do catálogo Flagship)', dep:'', stock:null, price:null, ativo:o.ativo, frete:null, pct:null, st:'Inativar', orfao:true });
+      rows.push({ l:null, sku:o.sku, name:'(SKU fora do catálogo Flagship)', dep:'', stock:null, pde:null, ppor:null, ativo:o.ativo, frete:null, comissao:null, pct:null, st:'Inativar', orfao:true });
     });
   }
   return rows;
@@ -812,31 +815,33 @@ function mpRows(mp){
 function drawMPTable(mp){
   const f=S.f[mp]; const rows=mpRows(mp);
   const cols = [
-    {k:'chk', t:'✓', w:'38px', c:'c', ns:true},
-    {k:'sku', t:'SKU', w:'11%'},
+    {k:'chk', t:'✓', w:'34px', c:'c', ns:true},
+    {k:'sku', t:'SKU', w:'7.5%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'12%', cls:'hs'},
-    {k:'stock', t:'Estoque', w:'7%', n:1, cls:'hx'},
-    {k:'price', t:'Preço site', w:'9%', n:1},
-    {k:'ativo', t:'Preço MP', w:'9%', n:1},
+    {k:'dep', t:'Departamento', w:'10%', cls:'hm'},
+    {k:'stock', t:'Estoque', w:'6.5%', n:1, cls:'hs'},
+    {k:'pde', t:'Preço De', w:'8%', n:1, cls:'hx'},
+    {k:'ppor', t:'Preço Por', w:'8%', n:1},
+    {k:'ativo', t:'Preço Canal', w:'8%', n:1},
     {k:'frete', t:mp==='shopee'?'Fixo':'Frete', w:'7%', n:1, cls:'hs'},
-    {k:'pct', t:'Custo %', w:'8%', n:1},
-    {k:'st', t:'Ação', w:'13%'}
+    {k:'comissao', t:'Comissão ('+fP(mp==='shopee'?null:S.P[mp].com,1).replace('—','faixa')+')', w:'8%', n:1, cls:'hx'},
+    {k:'pct', t:'Comissão Estimada %', w:'8.5%', n:1},
+    {k:'st', t:'Ação', w:'11%'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per, f.page*per+per);
-  $('#mpTable').innerHTML = `<table class="tbl"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
+  $('#mpTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c.ns?'':'s'} ${c.n?'n':''} ${c.c||''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
   <tbody>${pg.map(r=>{
     const s = r.orfao ? 'Inativar' : r.l.mp[mp].status;
     const done = r.orfao ? !!S.acoes[acaoKey(r.sku,mp)]?.concluido : isDone(r.l,mp);
     const chk = isAcao(s) ? `<input type="checkbox" class="chk" ${done?'checked':''} onchange="toggleAcao('${mp}','${esc(r.sku)}','${s}',this.checked)" title="Marcar ação como concluída">` : '';
-    const dif = r.ativo!=null && r.price!=null && Math.round(r.ativo*100)!==Math.round(r.price*100);
-    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hx">${fN(r.stock)}</td><td class="n">${fR(r.price)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fR(r.ativo)}</td><td class="n hs">${fR(r.frete)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td></tr>`;
+    const dif = r.ativo!=null && r.ppor!=null && Math.round(r.ativo*100)!==Math.round(r.ppor*100);
+    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hm" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hs">${fN(r.stock)}</td><td class="n hx">${fR(r.pde)}</td><td class="n">${fR(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fR(r.ativo)}</td><td class="n hs">${fR(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por':''}">${fR(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td></tr>`;
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
-  const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (custo alto)', todos:'Todos os SKUs' }[f.st];
+  const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (comissão alta)', todos:'Todos os SKUs' }[f.st];
   $('#mpListTit').textContent = `${MPN[mp]} · ${stTxt}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''} — ${fN(rows.length)} SKUs`;
   $('#mpTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawMPTable(mp); });
 }
@@ -869,7 +874,7 @@ function renderCatalogo(){
   const f = S.f.cat ||= { q:'', el:'', mot:'', dep:'', sort:'sku', dir:1, page:0 };
   const hab=L.filter(l=>l.status.toLowerCase()==='habilitado');
   const inc=L.filter(l=>l.incompleto).length, semEst=hab.filter(l=>!(l.stock>0)).length, el=L.filter(l=>l.elegivel);
-  const ticket = el.length ? el.reduce((a,l)=>a+l.price,0)/el.length : null;
+  const ticket = el.length ? el.reduce((a,l)=>a+l.preco_ref,0)/el.length : null;
   // por departamento
   const dep={}; L.forEach(l=>{ const d=l.departamento||'(sem departamento)'; const x=dep[d] ||= {t:0,h:0,e:0,s:0,mk:0}; x.t++; if(l.status.toLowerCase()==='habilitado') x.h++; if(l.elegivel){ x.e++; if(MARKETPLACES.some(mp=>l.mp[mp.id].status==='Subir')) x.s++; } if(MARKETPLACES.some(mp=>l.mp[mp.id].ativo>0)) x.mk++; });
   const depArr=Object.entries(dep).sort((a,b)=>b[1].e-a[1].e);
@@ -878,7 +883,7 @@ function renderCatalogo(){
   <div class="grid g5" style="margin-bottom:16px">
     ${kpi('SKUs do seller', fN(L.length), fN(hab.length)+' habilitados', true)}
     ${kpi('Elegíveis', fN(el.length), fP(el.length/(hab.length||1))+' dos habilitados')}
-    ${kpi('Ticket médio elegível', fR(ticket), 'Preço de site (price)')}
+    ${kpi('Ticket médio elegível', fR(ticket), 'Preço Por do site')}
     ${kpi('Cadastro incompleto', fN(inc), 'Peso ou dimensões em branco')}
     ${kpi('Habilitados sem estoque', fN(semEst), 'stock_quantity = 0')}
   </div>
@@ -915,17 +920,17 @@ function catRows(){
     if (f.dep && l.departamento!==f.dep) return false;
     if (q && !(l.sku.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||l.marca.toLowerCase().includes(q)||(l.ean||'').includes(q))) return false;
     return true;
-  }).map(l=>({l, sku:l.sku, name:l.name, marca:l.marca, dep:l.departamento, peso:l.peso, dim:Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null, price:l.price, stock:l.stock, mot:l.elegivel?'':l.motivos.join(' · ')}));
+  }).map(l=>({l, sku:l.sku, name:l.name, marca:l.marca, dep:l.departamento, peso:l.peso, dim:Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null, pde:l.price, ppor:l.preco_ref, stock:l.stock, mot:l.elegivel?'':l.motivos.join(' · ')}));
 }
 function drawCat(){
   const f=S.f.cat, rows=catRows();
-  const cols=[{k:'sku',t:'SKU',w:'11%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'10%',cls:'hs'},{k:'peso',t:'Peso kg',w:'7%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'8%',n:1,cls:'hs'},{k:'price',t:'Preço',w:'9%',n:1},{k:'stock',t:'Estoque',w:'7%',n:1,cls:'hx'},{k:'mot',t:'Situação',w:'22%'}];
+  const cols=[{k:'sku',t:'SKU',w:'11%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'10%',cls:'hs'},{k:'peso',t:'Peso kg',w:'7%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'8%',n:1,cls:'hs'},{k:'pde',t:'Preço De',w:'8%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por',w:'8%',n:1},{k:'stock',t:'Estoque',w:'7%',n:1,cls:'hx'},{k:'mot',t:'Situação',w:'22%'}];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per,f.page*per+per);
   $('#catTable').innerHTML = `<table class="tbl"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="s ${c.n?'n':''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
-  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n">${fR(r.price)}</td><td class="n hx">${fN(r.stock)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
+  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fR(r.pde)}</td><td class="n">${fR(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgCat(')}`;
   $('#catListTit').textContent = `SKUs do catálogo — ${fN(rows.length)}`;
   $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawCat(); });
@@ -949,13 +954,13 @@ function drawOutros(){
   const rows=outrosRows(), f=S.f.out, per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   $('#outTit').textContent = `${S.outro} — ${fN(rows.length)} anúncios`;
   $('#outTable').innerHTML = `<table class="tbl"><colgroup><col style="width:12%"><col><col class="hs" style="width:12%"><col style="width:11%"><col style="width:11%"><col style="width:14%"></colgroup>
-  <thead><tr><th>SKU</th><th>Título no marketplace</th><th class="hs">Cód. MP</th><th class="n">Preço site</th><th class="n">Preço MP</th><th>Catálogo</th></tr></thead>
-  <tbody>${rows.slice(f.page*per,f.page*per+per).map(({a,l})=>`<tr><td class="mono">${esc(a.sku)}</td><td title="${esc(a.titulo)}">${esc(a.titulo)}</td><td class="hs mono">${esc(a.cod_marketplace)}</td><td class="n">${fR(l?.price)}</td><td class="n">${fR(a.preco_por??a.preco_de)}</td><td>${!l?'<span class="pill Inativar">Fora do catálogo</span>':l.elegivel?'<span class="pill ok">Elegível</span>':'<span class="pill">Não elegível</span>'}</td></tr>`).join('') || `<tr><td colspan="6"><div class="empty">Nenhum anúncio.</div></td></tr>`}</tbody></table>
+  <thead><tr><th>SKU</th><th>Título no marketplace</th><th class="hs">Cód. MP</th><th class="n">Preço Por</th><th class="n">Preço Canal</th><th>Catálogo</th></tr></thead>
+  <tbody>${rows.slice(f.page*per,f.page*per+per).map(({a,l})=>`<tr><td class="mono">${esc(a.sku)}</td><td title="${esc(a.titulo)}">${esc(a.titulo)}</td><td class="hs mono">${esc(a.cod_marketplace)}</td><td class="n">${fR(l?.preco_ref)}</td><td class="n">${fR(a.preco_por??a.preco_de)}</td><td>${!l?'<span class="pill Inativar">Fora do catálogo</span>':l.elegivel?'<span class="pill ok">Elegível</span>':'<span class="pill">Não elegível</span>'}</td></tr>`).join('') || `<tr><td colspan="6"><div class="empty">Nenhum anúncio.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgOut(')}`;
 }
 function pgOut(p){ S.f.out.page=p; drawOutros(); }
 function exportOutros(){
-  baixarXLSX('MATCON_'+S.outro.replace(/\W+/g,''), outrosRows().map(({a,l})=>({ 'SKU':a.sku, 'Título':a.titulo, 'Conta':a.conta, 'SKU no marketplace':a.sku_marketplace, 'Cód. marketplace':a.cod_marketplace, 'Preço de':a.preco_de, 'Preço por':a.preco_por, 'Preço site':l?.price??null, 'Situação no catálogo': !l?'Fora do catálogo':l.elegivel?'Elegível':'Não elegível', 'Motivos': l?l.motivos.join(' · '):'' })), 'Anúncios');
+  baixarXLSX('MATCON_'+S.outro.replace(/\W+/g,''), outrosRows().map(({a,l})=>({ 'SKU':a.sku, 'Título':a.titulo, 'Conta':a.conta, 'SKU no marketplace':a.sku_marketplace, 'Cód. marketplace':a.cod_marketplace, 'Preço De (canal)':a.preco_de, 'Preço Canal':a.preco_por, 'Preço De (site)':l?.price??null, 'Preço Por (site)':l?.preco_ref??null, 'Situação no catálogo': !l?'Fora do catálogo':l.elegivel?'Elegível':'Não elegível', 'Motivos': l?l.motivos.join(' · '):'' })), 'Anúncios');
 }
 
 /* ======================= PREMISSAS ======================= */
@@ -966,13 +971,12 @@ function renderPremissas(){
   m.innerHTML = head('Premissas','Regras usadas no cálculo — alterações valem para todos os usuários depois de salvar',
     `<button class="btn" onclick="resetPremissas()">Restaurar padrão</button><button class="btn pri" onclick="savePremissas()">Salvar premissas</button>`) + `
   <div class="card" style="margin-bottom:16px">
-    <h3>Elegibilidade e base</h3><div class="sub">Um SKU é elegível quando é do seller, está habilitado, não é inflamável e respeita os limites abaixo</div>
+    <h3>Elegibilidade e base</h3><div class="sub">Um SKU é elegível quando é do seller, está habilitado, tem preço, não é inflamável e respeita os limites de peso e dimensão. A comissão estimada é calculada sobre o Preço Por do site (ou o Preço De, quando não há Preço Por).</div>
     <div class="form-grid">
       <div class="fld"><label>Seller Flagship (seller_id)</label><input type="text" data-p="seller_id" data-t="s" value="${esc(P.seller_id)}"></div>
-      <div class="fld"><label>Preço mínimo (R$) — elegível se maior</label>${inp('preco_min',P.preco_min)}</div>
       <div class="fld"><label>Peso máximo (kg) — elegível se menor</label>${inp('peso_max',P.peso_max)}</div>
       <div class="fld"><label>Dimensão máxima (cm) — elegível se menor</label>${inp('dim_max',P.dim_max)}</div>
-      <div class="fld"><label>Custo máximo (comissão + frete)</label>${inp('comissao_max',P.comissao_max,'0.01','Em decimal: 0,25 = 25%')}</div>
+      <div class="fld"><label>Comissão estimada máxima</label>${inp('comissao_max',P.comissao_max,'0.01','Em decimal: 0,25 = 25%')}</div>
       <div class="fld"><label>Divisor do preço</label>${inp('div_preco',P.div_preco,'1','price e Special_price da base')}</div>
       <div class="fld"><label>Divisor do estoque</label>${inp('div_estoque',P.div_estoque,'1','stock_quantity da base')}</div>
       <div class="fld"><label>Cadastro sem peso/dimensão</label><select data-p="exigir_cadastro" data-t="b"><option value="false" ${!P.exigir_cadastro?'selected':''}>Segue elegível</option><option value="true" ${P.exigir_cadastro?'selected':''}>Fica inelegível</option></select></div>
@@ -981,7 +985,7 @@ function renderPremissas(){
   </div>
   <div class="grid g3" style="margin-bottom:16px">
     <div class="card">
-      <h3>Shopee</h3><div class="sub">Faixa aplicada quando o preço do site ≥ “a partir de”</div>
+      <h3>Shopee</h3><div class="sub">Faixa aplicada quando o Preço Por ≥ “a partir de”</div>
       <table class="tbl"><thead><tr><th>A partir de (R$)</th><th class="n">Fixo (R$)</th><th class="n">Comissão</th></tr></thead>
       <tbody>${P.shopee.faixas.map((x,i)=>`<tr><td>${cell(`shopee.faixas.${i}.min`,x.min)}</td><td>${cell(`shopee.faixas.${i}.fixo`,x.fixo)}</td><td>${cell(`shopee.faixas.${i}.com`,x.com)}</td></tr>`).join('')}</tbody></table>
       <div class="hint muted" style="margin-top:6px;font-size:11px">Comissão em decimal (0,14 = 14%)</div>
@@ -1001,7 +1005,7 @@ function renderPremissas(){
     </div>
   </div>
   <div class="card">
-    <h3>Tabela de frete Mercado Livre</h3><div class="sub">Valor base (reputação boa) por faixa de peso × faixa de preço do site · coluna aplicada quando o preço é maior que o limite inferior</div>
+    <h3>Tabela de frete Mercado Livre</h3><div class="sub">Valor base (reputação boa) por faixa de peso × faixa de preço do site · coluna aplicada quando o Preço Por é maior que o limite inferior</div>
     <table class="tbl dense"><thead><tr><th style="width:9%">Peso até (kg)</th>${P.meli.colunas.map(c=>`<th class="n">${esc(c)}</th>`).join('')}</tr></thead>
     <tbody>${P.meli.tabela.map((row,i)=>`<tr><td>${cell(`meli.faixas_peso.${i}`,P.meli.faixas_peso[i])}</td>${row.map((v,j)=>`<td>${cell(`meli.tabela.${i}.${j}`,v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
   </div>`;
@@ -1150,11 +1154,11 @@ function baixarXLSX(nome, rows, sheet='Dados'){
   XLSX.writeFile(wb, nome + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 function exportMP(mp){
-  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço site':r.price, ['Preço '+MPN[mp]]:r.ativo, [mp==='shopee'?'Fixo':'Frete']:r.frete, 'Comissão':r.l?.mp[mp].com??null, 'Custo %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
+  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.comissao, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
   baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp]);
 }
 function exportCat(){
-  baixarXLSX('MATCON_Catalogo', catRows().map(r=>({ 'SKU':r.sku,'Produto':r.name,'EAN':r.l.ean,'Marca':r.marca,'Departamento':r.dep,'Categoria':r.l.categoria,'Subcategoria':r.l.subcategoria,'Peso (kg)':r.peso,'Altura':r.l.altura,'Largura':r.l.largura,'Profundidade':r.l.profundidade,'Preço':r.price,'Preço especial':r.l.special_price,'Estoque':r.stock,'Status':r.l.status,'Elegível':r.l.elegivel?'Sim':'Não','Motivos':r.mot })), 'Catálogo');
+  baixarXLSX('MATCON_Catalogo', catRows().map(r=>({ 'SKU':r.sku,'Produto':r.name,'EAN':r.l.ean,'Marca':r.marca,'Departamento':r.dep,'Categoria':r.l.categoria,'Subcategoria':r.l.subcategoria,'Peso (kg)':r.peso,'Altura':r.l.altura,'Largura':r.l.largura,'Profundidade':r.l.profundidade,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Status':r.l.status,'Elegível':r.l.elegivel?'Sim':'Não','Motivos':r.mot })), 'Catálogo');
 }
 function exportResumo(){
   const s=S.sum;
