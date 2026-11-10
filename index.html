@@ -395,8 +395,50 @@ function custoShopee(preco, P){
   for (const x of f) if (preco >= x.min) t = x;
   return { frete: null, fixo: t.fixo, com: t.com, pct: (t.com*preco + t.fixo)/preco };
 }
+/* ---------- tabelas de frete com vigência ----------
+   Cada canal pode ter "historico": [{vigencia:'AAAA-MM-DD', arquivo, carregado_em, usuario, ...tabela}].
+   Vale a de maior vigência que já começou; sem nenhuma, vale a tabela base das premissas. */
+function hojeISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function tabelaVigente(obj, hoje){
+  hoje = hoje || hojeISO();
+  const h = (obj && obj.historico || []).filter(x => x.vigencia <= hoje).sort((a,b) => a.vigencia < b.vigencia ? 1 : a.vigencia > b.vigencia ? -1 : (a.carregado_em < b.carregado_em ? 1 : -1));
+  return h[0] || obj;
+}
+
+/* Lê uma planilha de frete (linhas = faixas de peso; colunas = faixas de preço ou valores) */
+function pesoLimite(label){
+  const t = String(label||'').toLowerCase().replace(/\s+/g,' ');
+  if (/mais de|acima de|a partir de/.test(t)) return 1e9;
+  const re = /(\d+(?:[.,]\d+)?)\s*(kg|gr|g)?/g; let m, last=null, unit=null;
+  while ((m = re.exec(t))){ last = parseFloat(m[1].replace(',','.')); if (m[2]) unit = m[2]; }
+  if (last === null) return null;
+  if (!unit && /gr?\b/.test(t) && !/kg/.test(t)) unit = 'g';
+  return (unit === 'g' || unit === 'gr') ? last/1000 : last;
+}
+function precoInicio(label){
+  const m = String(label||'').replace(/\./g,'').match(/(\d+(?:,\d+)?)/);
+  return m ? parseFloat(m[1].replace(',','.')) : 0;
+}
+function lerTabelaFrete(aoa){
+  let hi = aoa.findIndex(r => r && /peso/i.test(String(r[0]||'')));
+  if (hi < 0) hi = 0;
+  const header = (aoa[hi]||[]).slice(1).map(x => String(x??'').trim());
+  const cols = header.map((h,i)=>({h,i})).filter(c => c.h);
+  const linhas = [];
+  for (const r of aoa.slice(hi+1)){
+    if (!r || r[0]==null || String(r[0]).trim()==='') continue;
+    const lim = pesoLimite(r[0]);
+    if (lim === null) continue;
+    const vals = cols.map(c => { const v = r[c.i+1]; const n = typeof v==='number' ? v : parseFloat(String(v??'').replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.')); return isFinite(n) ? n : null; });
+    if (vals.every(v => v === null)) continue;
+    linhas.push({ label:String(r[0]).trim(), lim, vals });
+  }
+  linhas.sort((a,b)=>a.lim-b.lim);
+  return { colunas: cols.map(c=>c.h), faixas_peso: linhas.map(l=>l.lim), rotulos: linhas.map(l=>l.label), matriz: linhas.map(l=>l.vals) };
+}
+
 function freteMeli(preco, peso, P){
-  const M = P.meli;
+  const M = { ...P.meli, ...tabelaVigente(P.meli) };
   if ((peso||0) > M.faixas_peso[M.faixas_peso.length-1]) return null;
   let col = 0; for (const lim of M.faixas_preco) if (preco > lim) col++;
   let lin = M.faixas_peso.findIndex(l => (peso||0) <= l);
@@ -409,7 +451,7 @@ function custoMeli(preco, peso, P){
   return { frete, fixo: 0, com: P.meli.com, pct: frete===null ? null : (P.meli.com*preco + frete)/preco };
 }
 function freteMagalu(peso, P){
-  const M = P.magalu;
+  const M = { ...P.magalu, ...tabelaVigente(P.magalu) };
   const i = M.faixas_peso.findIndex(l => (peso||0) <= l);
   return i < 0 ? null : M.valores[i];
 }
@@ -429,7 +471,7 @@ function statusMP(eleg, ativo, pct, preco, P){
 }
 
 function custoExtra(id, preco, peso, P){
-  const c = canalExtra(P, id) || {};
+  const c0 = canalExtra(P, id) || {}; const c = { ...c0, ...tabelaVigente(c0) };
   const fp = (c.faixas_peso||[]).map(Number), vs = (c.valores||[]).map(Number);
   let frete = 0;
   if (fp.length){ const i = fp.findIndex(l => (peso||0) <= l); frete = i < 0 ? null : (vs[i] ?? 0); }
@@ -502,7 +544,7 @@ function resumo(res){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -1061,20 +1103,36 @@ function renderPremissas(){
       </div>
     </div>
     <div class="card">
-      <h3>Magalu</h3><div class="sub">Comissão + frete por peso (sem desconto)</div>
+      <div class="card-h"><div><h3>Magalu</h3><div class="sub">Comissão + frete por peso</div></div><button class="btn sm" onclick="irFrete('magalu')">Subir nova tabela</button></div>
       <div class="fld" style="margin-bottom:10px"><label>Comissão</label>${inp('magalu.com',P.magalu.com,'0.001')}</div>
-      <table class="tbl"><thead><tr><th>Peso até (kg)</th><th class="n">Frete (R$)</th></tr></thead>
-      <tbody>${P.magalu.faixas_peso.map((x,i)=>`<tr><td>${cell(`magalu.faixas_peso.${i}`,x)}</td><td>${cell(`magalu.valores.${i}`,P.magalu.valores[i])}</td></tr>`).join('')}</tbody></table>
+      ${(()=>{ const v=vigInfo(P,'magalu'); return `${v.nota}<table class="tbl"><thead><tr><th>Peso até (kg)</th><th class="n">Frete (R$)</th></tr></thead>
+      <tbody>${v.t.faixas_peso.map((x,i)=>`<tr><td>${pesoCell(v.pre+'faixas_peso.'+i,x,v.t.faixas_peso[i-1])}</td><td>${cell(v.pre+'valores.'+i,v.t.valores[i])}</td></tr>`).join('')}</tbody></table>`; })()}
     </div>
   </div>
   <div class="card">
-    <h3>Tabela de frete Mercado Livre</h3><div class="sub">Valor base (reputação boa) por faixa de peso × faixa de preço do site · coluna aplicada quando o Preço Por é maior que o limite inferior</div>
-    <table class="tbl dense"><thead><tr><th style="width:9%">Peso até (kg)</th>${P.meli.colunas.map(c=>`<th class="n">${esc(c)}</th>`).join('')}</tr></thead>
-    <tbody>${P.meli.tabela.map((row,i)=>`<tr><td>${cell(`meli.faixas_peso.${i}`,P.meli.faixas_peso[i])}</td>${row.map((v,j)=>`<td>${cell(`meli.tabela.${i}.${j}`,v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <div class="card-h"><div><h3>Tabela de frete Mercado Livre</h3><div class="sub">Valor base (reputação boa) por faixa de peso × faixa de preço do site · coluna aplicada quando o Preço Por é maior que o limite inferior</div></div>
+    <button class="btn sm" onclick="irFrete('meli')">Subir nova tabela</button></div>
+    ${(()=>{ const v=vigInfo(P,'meli'), cols=v.t.colunas||P.meli.colunas; return `${v.nota}<table class="tbl dense"><thead><tr><th style="width:9%">Peso até (kg)</th>${cols.map(c=>`<th class="n">${esc(c)}</th>`).join('')}</tr></thead>
+    <tbody>${v.t.tabela.map((row,i)=>`<tr><td>${pesoCell(v.pre+'faixas_peso.'+i,v.t.faixas_peso[i],v.t.faixas_peso[i-1])}</td>${row.map((x,j)=>`<td>${cell(v.pre+'tabela.'+i+'.'+j,x)}</td>`).join('')}</tr>`).join('')}</tbody></table>`; })()}
   </div>
   ${canaisExtraHTML(P)}`;
   if (S.focoCanal!=null){ const el=document.getElementById('canal-'+S.focoCanal); S.focoCanal=null; if(el){ el.scrollIntoView({behavior:'smooth',block:'start'}); el.querySelector('input')?.focus({preventScroll:true}); } }
 }
+function vigInfo(P, id){
+  const obj = id==='meli'||id==='magalu' ? P[id] : canalExtra(P,id);
+  const t = tabelaVigente(obj), k = (obj.historico||[]).indexOf(t);
+  const base = id==='meli'||id==='magalu' ? id+'.' : 'canais_extra.'+(P.canais_extra||[]).indexOf(obj)+'.';
+  const pre = k>=0 ? base+'historico.'+k+'.' : base;
+  const prox = (obj.historico||[]).filter(h=>h.vigencia>hojeISO()).sort((a,b)=>a.vigencia<b.vigencia?-1:1)[0];
+  const nota = `<div class="note" style="margin-bottom:10px">${k>=0?`Tabela vigente desde <b>${fDia(t.vigencia)}</b> · ${esc(t.arquivo||'')}`:'Tabela vigente: <b>padrão do Simulador V9</b>'}${prox?` · próxima tabela entra em <b>${fDia(prox.vigencia)}</b>`:''}. Para trocar, use “Subir nova tabela”.</div>`;
+  return { t, pre, nota };
+}
+const fDia = d => d ? d.split('-').reverse().join('/') : '';
+function pesoCell(path, v, ant){
+  if (v >= 1e8) return `<input type="hidden" data-p="${path}" value="${v}"><span class="muted" style="font-size:12px">acima de ${fN(ant,1)}</span>`;
+  return `<input class="cell" type="number" step="any" data-p="${path}" value="${v??''}">`;
+}
+function irFrete(id){ S.Pd=null; S.freteCanal=id; S.tab='cargas'; buildNav(); render(); setTimeout(()=>$('#freteCard')?.scrollIntoView({behavior:'smooth',block:'start'}),60); }
 function canaisExtraHTML(P){
   const semRegra = Object.keys(S.sum?.outros||{}).filter(n=>!(P.canais_extra||[]).some(c=>String(c.anymarket||c.nome).trim().toLowerCase()===n.trim().toLowerCase()));
   const txt=(path,v,ph='')=>`<input type="text" data-p="${path}" data-t="s" value="${esc(v??'')}" placeholder="${esc(ph)}">`;
@@ -1167,14 +1225,16 @@ function renderCargas(){
     <div class="card">
       <h3>O que o painel reconhece</h3>
       <div class="note" style="margin-top:8px"><b>Base de produtos</b> — aba com as colunas <span class="mono">sku, name, Inflamavel, ean, altura, largura, Profundidade, Marca, peso, Departamento, Categoria, Subcategoria, price, Special_price, status, stock_quantity, seller_id</span>. Substitui a base inteira.<br><br>
-      <b>Anymarket › Preço › Exportar</b> — aba com <span class="mono">SKU INTERNO, MARKETPLACE, PREÇO DE, PREÇO POR…</span>. Substitui todos os anúncios ativos.</div>
+      <b>Anymarket › Planilha › Preço › Exportar</b> — aba com <span class="mono">SKU INTERNO, MARKETPLACE, PREÇO DE, PREÇO POR…</span>. Substitui todos os anúncios ativos.</div>
     </div>
   </div>
+  ${freteCardHTML()}
   <div class="card">
     <h3>Histórico de cargas</h3><div class="sub">${S.local?'No modo local o histórico não é gravado':'Últimas 40 cargas'}</div>
     <table class="tbl"><thead><tr><th style="width:20%">Data</th><th style="width:18%">Tipo</th><th>Arquivo</th><th class="n" style="width:12%">Linhas</th><th class="hs" style="width:22%">Usuário</th></tr></thead>
     <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':'Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
   </div>`;
+  $('#freteFile').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerFrete(f); };
   const d=$('#drop');
   d.onclick=()=>$('#fileInput').click();
   d.ondragover=e=>{e.preventDefault();d.classList.add('over');};
@@ -1182,6 +1242,80 @@ function renderCargas(){
   d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); if(e.dataTransfer.files[0]) lerArquivo(e.dataTransfer.files[0]);};
 }
 $('#fileInput').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerArquivo(f); };
+
+/* ---------- Tabelas de frete com vigência ---------- */
+function canaisComFrete(){ return [['meli','Mercado Livre'],['magalu','Magalu'], ...(S.P.canais_extra||[]).map(c=>[c.id,c.nome])]; }
+function freteObj(P,id){ return id==='meli'||id==='magalu' ? P[id] : canalExtra(P,id); }
+function freteCardHTML(){
+  const sel = S.freteCanal || 'meli', hoje = hojeISO();
+  const hist = canaisComFrete().flatMap(([id,nome])=>{ const o=freteObj(S.P,id); const vig=tabelaVigente(o);
+    return (o.historico||[]).map((h,k)=>({id,nome,k,h,sit: h===vig?'Vigente':h.vigencia>hoje?'Agendada':'Substituída'})); })
+    .sort((a,b)=>a.h.vigencia<b.h.vigencia?1:-1);
+  return `<div class="card" id="freteCard" style="margin-bottom:16px">
+    <h3>Tabelas de frete</h3><div class="sub">Suba a tabela nova com a data em que ela passa a valer. Até essa data o painel continua usando a tabela atual; no dia, troca sozinho.</div>
+    <div class="filters" style="margin-bottom:6px">
+      <label>Canal <select id="freteCanal" onchange="S.freteCanal=this.value">${canaisComFrete().map(([id,n])=>`<option value="${id}" ${sel===id?'selected':''}>${esc(n)}</option>`).join('')}</select></label>
+      <label>Vigente a partir de <input type="date" id="freteVig" value="${hoje}" style="border:1px solid var(--line);border-radius:8px;padding:6px 8px"></label>
+      <label class="btn lime" style="margin:0">Escolher planilha de frete<input type="file" id="freteFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
+    </div>
+    <div id="freteStatus"></div>
+    <table class="tbl" style="margin-top:12px"><thead><tr><th style="width:16%">Canal</th><th style="width:13%">Vigência</th><th>Arquivo</th><th class="n hs" style="width:10%">Faixas de peso</th><th class="hs" style="width:16%">Carregada em</th><th style="width:12%">Situação</th><th style="width:9%"></th></tr></thead>
+    <tbody>${hist.map(r=>`<tr><td>${icoHTML(r.id,'sm')}${esc(r.nome)}</td><td>${fDia(r.h.vigencia)}</td><td>${esc(r.h.arquivo||'')}</td><td class="n hs">${fN(r.h.faixas_peso.filter(x=>x<1e8).length)}</td><td class="hs">${fD(r.h.carregado_em)}${r.h.usuario?'<br><span class="muted">'+esc(r.h.usuario)+'</span>':''}</td><td><span class="pill ${r.sit==='Vigente'?'ok':r.sit==='Agendada'?'Subir':''}">${r.sit}</span></td><td class="c"><button class="btn sm" onclick="rmFrete('${r.id}',${r.k})">Excluir</button></td></tr>`).join('') || `<tr><td colspan="7"><div class="empty">Nenhuma tabela carregada. Os canais usam a tabela padrão do Simulador V9.</div></td></tr>`}</tbody></table>
+  </div>`;
+}
+async function lerFrete(file){
+  const st=$('#freteStatus'), id=$('#freteCanal').value, vig=$('#freteVig').value;
+  if (!vig){ st.innerHTML='<div class="err">Informe a data de vigência.</div>'; return; }
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:null, raw:true, blankrows:false });
+    const t = lerTabelaFrete(aoa);
+    if (!t.faixas_peso.length || !t.colunas.length){ st.innerHTML='<div class="err">Não encontrei a tabela. A primeira coluna precisa ter as faixas de peso (ex.: “Até 0,3 kg”, “De 0,3 a 0,5 kg”).</div>'; return; }
+    const atual = tabelaVigente(freteObj(S.P,id));
+    S.freteNovo = { id, vig, arquivo:file.name, t };
+    let resumo, extra='';
+    if (id==='meli'){
+      const ok = t.colunas.length === 8 || confirm(`A planilha tem ${t.colunas.length} faixas de preço (o esperado são 8). Usar mesmo assim?`);
+      if (!ok){ st.innerHTML=''; return; }
+      resumo = `${fN(t.faixas_peso.filter(x=>x<1e8).length)} faixas de peso × ${t.colunas.length} faixas de preço`;
+      extra = compararMeli(atual, t);
+    } else {
+      resumo = `${fN(t.faixas_peso.filter(x=>x<1e8).length)} faixas de peso`;
+      if (t.colunas.length>1) extra = `<div style="margin-top:6px">Coluna de valores a usar: <select id="freteCol">${t.colunas.map((c,i)=>`<option value="${i}">${esc(c)}</option>`).join('')}</select></div>`;
+    }
+    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b> — ${resumo}. Vale para <b>${esc(canaisComFrete().find(c=>c[0]===id)[1])}</b> a partir de <b>${fDia(vig)}</b>${vig>hojeISO()?' (até lá continua a tabela atual)':''}.${extra}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" onclick="gravarFrete()">Confirmar tabela</button><button class="btn" onclick="$('#freteStatus').innerHTML=''">Cancelar</button></div>`;
+  } catch(e){ console.error(e); st.innerHTML=`<div class="err">Erro ao ler a planilha: ${esc(e.message||e)}</div>`; }
+}
+function compararMeli(atual, t){
+  const pesoA=atual.faixas_peso.map(Number);
+  let n=0, mud=0, soma=0;
+  t.faixas_peso.forEach((lim,i)=>{ const ia=pesoA.findIndex(x=>Math.abs(x-lim)<1e-9); if(ia<0) return;
+    t.matriz[i].forEach((v,j)=>{ const a=(atual.tabela[ia]||[])[j]; if(a==null||v==null) return; n++; if(Math.abs(a-v)>0.004){ mud++; soma+=(v-a)/a; } }); });
+  const novas = t.faixas_peso.filter(l=>!pesoA.some(x=>Math.abs(x-l)<1e-9)).length;
+  return `<div style="margin-top:6px">Em relação à tabela vigente: <b>${fN(mud)}</b> de ${fN(n)} valores mudaram${mud?`, variação média de <b>${(soma/mud>0?'+':'')+fN(soma/mud*100,1)}%</b>`:''}${novas?` · ${fN(novas)} faixas de peso novas`:''}.</div>`;
+}
+async function gravarFrete(){
+  const N=S.freteNovo; if(!N) return;
+  const P=structuredClone(S.P), o=freteObj(P,N.id); o.historico ||= [];
+  const ent = { vigencia:N.vig, arquivo:N.arquivo, carregado_em:new Date().toISOString(), usuario:S.user?.email||null, faixas_peso:N.t.faixas_peso };
+  if (N.id==='meli'){ ent.tabela=N.t.matriz; ent.colunas=N.t.colunas; ent.faixas_preco=N.t.colunas.slice(1).map(precoInicio); }
+  else { const c=+($('#freteCol')?.value||0); ent.valores=N.t.matriz.map(r=>r[c]); ent.coluna=N.t.colunas[c]; }
+  o.historico.push(ent);
+  if (await salvarP(P)){ S.freteNovo=null; toast('Tabela de frete gravada'); renderCargas(); }
+}
+async function rmFrete(id,k){
+  if(!confirm('Excluir esta tabela de frete? Se ela for a vigente, volta a valer a anterior.')) return;
+  const P=structuredClone(S.P); freteObj(P,id).historico.splice(k,1);
+  if (await salvarP(P)){ toast('Tabela excluída'); renderCargas(); }
+}
+async function salvarP(P){
+  if (!S.local){
+    const { error } = await S.sb.from('mc_premissas').upsert({ id:1, dados:P, usuario:S.user?.email||null, atualizado_em:new Date().toISOString() });
+    if (error){ toast('Erro ao salvar: '+error.message,5000); return false; }
+  }
+  S.P=P; S.Pd=null; recalc(); return true;
+}
 
 async function lerArquivo(file){
   const st=$('#upStatus');
