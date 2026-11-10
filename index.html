@@ -113,9 +113,10 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .pill.ok{background:var(--brand-l);color:#476000}.pill.ok::before{background:var(--brand)}
 
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.filters select:disabled{opacity:.45;cursor:not-allowed}
 .filters input[type=search],.filters select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;min-width:0}
 .filters input[type=search]{flex:1 1 220px}
-.filters select{flex:0 1 200px}
+.filters select{flex:0 0 auto;max-width:100%}
 .filters label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);white-space:nowrap}
 .pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--ink-2);gap:8px;flex-wrap:wrap}
 .pager .pg{display:flex;gap:4px;align-items:center}
@@ -800,7 +801,7 @@ function abrirLista(mp, st, pend=false){
   setTimeout(()=>$('#mpList')?.scrollIntoView({behavior:'smooth',block:'start'}), 60);
 }
 function abrirCatalogo(el){
-  S.f.cat = { q:'', el, mot:'', dep:'', sort:'sku', dir:1, page:0 };
+  S.f.cat = { q:'', el, mot:'', dep:'', can:'', sort:'sku', dir:1, page:0 };
   goTab('catalogo');
   setTimeout(()=>$('#catList')?.scrollIntoView({behavior:'smooth',block:'start'}), 60);
 }
@@ -855,7 +856,7 @@ function renderMP(mp){
 function ocOptions(mp){
   const o = MARKETPLACES.filter(m=>m.id!==mp);
   return [['','Todos os canais'],['algum','Ativo em outro canal'],['nenhum','Só neste canal'],
-    ...o.map(m=>['mp:'+m.id,'Ativo no '+m.nome]), ['todos2', o.length===2 ? 'Ativo em '+o.map(m=>MPS[m.id]).join(' e ') : 'Ativo em todos os outros canais']];
+    ...o.map(m=>['mp:'+m.id,(m.id==='shopee'?'Ativo na ':'Ativo no ')+m.nome]), ['todos2', o.length===2 ? 'Ativo em '+o.map(m=>MPS[m.id]).join(' e ') : 'Ativo em todos os outros canais']];
 }
 function outrosCanais(sku, l, mp){
   return MARKETPLACES.filter(m=>m.id!==mp && (l ? l.mp[m.id].ativo>0 : (S.res.orfaos[m.id]||[]).some(o=>o.sku===sku))).map(m=>m.id);
@@ -890,7 +891,9 @@ function drawMPCharts(mp){
       plugins:{ tooltip:{ mode:'index', callbacks:{ title:i=>top[i[0].dataIndex][0], label:c=>` ${c.dataset.label}: ${fN(c.raw)}` } } } } });
 }
 function mpRows(mp){
-  const f=S.f[mp]; const q=f.q.trim().toLowerCase();
+  const f0=S.f[mp]; const q=f0.q.trim().toLowerCase();
+  // busca por SKU/nome/EAN procura em todos os SKUs, ignorando os outros filtros
+  const f = q ? { ...f0, st:'todos', dep:'', pend:false, oc:'' } : f0;
   let rows = S.res.linhas.filter(l=>{
     const x=l.mp[mp], s=x.status;
     if (f.st==='acoes' && !isAcao(s)) return false;
@@ -947,7 +950,8 @@ function drawMPTable(mp){
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
   const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (comissão alta)', todos:'Todos os SKUs' }[f.st];
-  $('#mpListTit').textContent = `${MPN[mp]} · ${stTxt}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
+  $('#mpListTit').textContent = f.q.trim() ? `${MPN[mp]} · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)} SKUs` : `${MPN[mp]} · ${stTxt}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
+  ['#fst','#fdep','#foc','#fpend'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
   $('#mpTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawMPTable(mp); });
 }
 function pagerHTML(total, page, pages, fn){
@@ -976,7 +980,7 @@ async function toggleAcao(mp, sku, acao, on){
 function renderCatalogo(){
   const m=$('#main'), L=S.res.linhas;
   if (!L.length){ m.innerHTML = head('Catálogo','Elegibilidade da base Flagship') + semDados(); return; }
-  const f = S.f.cat ||= { q:'', el:'', mot:'', dep:'', sort:'sku', dir:1, page:0 };
+  const f = S.f.cat ||= { q:'', el:'', mot:'', dep:'', can:'', sort:'sku', dir:1, page:0 };
   const hab=L.filter(l=>l.status.toLowerCase()==='habilitado');
   const inc=L.filter(l=>l.incompleto).length, semEst=hab.filter(l=>!(l.stock>0)).length, el=L.filter(l=>l.elegivel);
   const ticket = el.length ? el.reduce((a,l)=>a+l.preco_ref,0)/el.length : null;
@@ -1004,6 +1008,7 @@ function renderCatalogo(){
       <select id="cel"><option value="">Elegíveis e não elegíveis</option><option value="s" ${f.el==='s'?'selected':''}>Só elegíveis</option><option value="n" ${f.el==='n'?'selected':''}>Só não elegíveis</option><option value="i" ${f.el==='i'?'selected':''}>Cadastro incompleto</option><option value="h" ${f.el==='h'?'selected':''}>Habilitados (Flagship)</option></select>
       <select id="cmot"><option value="">Todos os motivos</option>${motivos.map(x=>`<option ${f.mot===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
       <select id="cdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
+      <select id="ccan">${[['','Todos os canais'],['algum','Ativo em algum canal'],['nenhum','Sem anúncio em nenhum canal'],...MARKETPLACES.map(m=>['mp:'+m.id,(m.id==='shopee'?'Ativo na ':'Ativo no ')+m.nome]),['todos','Ativo em todos os canais']].map(([v,t])=>`<option value="${v}" ${f.can===v?'selected':''}>${esc(t)}</option>`).join('')}</select>
     </div>
     <div id="catTable"></div>
   </div>`;
@@ -1011,11 +1016,13 @@ function renderCatalogo(){
   $('#cel').onchange=e=>{f.el=e.target.value;f.page=0;drawCat();};
   $('#cmot').onchange=e=>{f.mot=e.target.value;f.page=0;drawCat();};
   $('#cdep').onchange=e=>{f.dep=e.target.value;f.page=0;drawCat();};
+  $('#ccan').onchange=e=>{f.can=e.target.value;f.page=0;drawCat();};
   drawCat();
 }
 function catDep(d){ S.f.cat.dep = d==='(sem departamento)'?'':d; S.f.cat.page=0; $('#cdep').value=S.f.cat.dep; drawCat(); $('#catTable').scrollIntoView({behavior:'smooth',block:'start'}); }
 function catRows(){
-  const f=S.f.cat, q=f.q.trim().toLowerCase();
+  const f0=S.f.cat, q=f0.q.trim().toLowerCase();
+  const f = q ? { ...f0, el:'', mot:'', dep:'', can:'' } : f0;
   return S.res.linhas.filter(l=>{
     if (f.el==='s' && !l.elegivel) return false;
     if (f.el==='n' && l.elegivel) return false;
@@ -1023,21 +1030,27 @@ function catRows(){
     if (f.el==='h' && l.status.toLowerCase()!=='habilitado') return false;
     if (f.mot && !l.motivos.includes(f.mot)) return false;
     if (f.dep && l.departamento!==f.dep) return false;
+    if (f.can){ const at=MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).length;
+      if (f.can==='algum' && !at) return false; if (f.can==='nenhum' && at) return false;
+      if (f.can==='todos' && at!==MARKETPLACES.length) return false;
+      if (f.can.startsWith('mp:') && !(l.mp[f.can.slice(3)].ativo>0)) return false; }
     if (q && !(l.sku.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||l.marca.toLowerCase().includes(q)||(l.ean||'').includes(q))) return false;
     return true;
-  }).map(l=>({l, sku:l.sku, name:l.name, marca:l.marca, dep:l.departamento, peso:l.peso, dim:Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null, pde:l.price, ppor:l.preco_ref, stock:l.stock, mot:l.elegivel?'':l.motivos.join(' · ')}));
+  }).map(l=>({l, canIds:MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).map(m=>m.id), can:MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).length, sku:l.sku, name:l.name, marca:l.marca, dep:l.departamento, peso:l.peso, dim:Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null, pde:l.price, ppor:l.preco_ref, stock:l.stock, mot:l.elegivel?'':l.motivos.join(' · ')}));
 }
 function drawCat(){
   const f=S.f.cat, rows=catRows();
-  const cols=[{k:'sku',t:'SKU',w:'11%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'10%',cls:'hs'},{k:'peso',t:'Peso kg',w:'7%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'8%',n:1,cls:'hs'},{k:'pde',t:'Preço De (R$)',w:'8%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por (R$)',w:'8%',n:1},{k:'stock',t:'Estoque',w:'7%',n:1,cls:'hx'},{k:'mot',t:'Situação',w:'22%'}];
+  const cols=[{k:'sku',t:'SKU',w:'8%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'9%',cls:'hs'},{k:'peso',t:'Peso kg',w:'6%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'6.5%',n:1,cls:'hs'},{k:'pde',t:'Preço De (R$)',w:'7.5%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por (R$)',w:'7.5%',n:1},{k:'stock',t:'Estoque',w:'6%',n:1,cls:'hx'},{k:'can',t:'Canais ativos',w:'11%'},{k:'mot',t:'Situação',w:'16%'}];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per,f.page*per+per);
   $('#catTable').innerHTML = `<table class="tbl"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="s ${c.n?'n':''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
-  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
+  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td style="line-height:1.9">${chipsCanais(r.canIds)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgCat(')}`;
-  $('#catListTit').textContent = `SKUs do catálogo — ${fN(rows.length)}`;
+  const canTxt = f.can ? ' · ' + $('#ccan').selectedOptions[0].text.toLowerCase() : '';
+  $('#catListTit').textContent = f.q.trim() ? `SKUs do catálogo · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)}` : `SKUs do catálogo${canTxt} — ${fN(rows.length)}`;
+  ['#cel','#cmot','#cdep','#ccan'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
   $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawCat(); });
 }
 function pgCat(p){ S.f.cat.page=p; drawCat(); }
@@ -1415,7 +1428,7 @@ function exportMP(mp){
   baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp]);
 }
 function exportCat(){
-  baixarXLSX('MATCON_Catalogo', catRows().map(r=>({ 'SKU':r.sku,'Produto':r.name,'EAN':r.l.ean,'Marca':r.marca,'Departamento':r.dep,'Categoria':r.l.categoria,'Subcategoria':r.l.subcategoria,'Peso (kg)':r.peso,'Altura':r.l.altura,'Largura':r.l.largura,'Profundidade':r.l.profundidade,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Status':r.l.status,'Elegível':r.l.elegivel?'Sim':'Não','Motivos':r.mot })), 'Catálogo');
+  baixarXLSX('MATCON_Catalogo', catRows().map(r=>({ 'SKU':r.sku,'Produto':r.name,'EAN':r.l.ean,'Marca':r.marca,'Departamento':r.dep,'Categoria':r.l.categoria,'Subcategoria':r.l.subcategoria,'Peso (kg)':r.peso,'Altura':r.l.altura,'Largura':r.l.largura,'Profundidade':r.l.profundidade,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Canais ativos':r.canIds.map(i=>MPN[i]).join(', '),'Status':r.l.status,'Elegível':r.l.elegivel?'Sim':'Não','Motivos':r.mot })), 'Catálogo');
 }
 function exportResumo(){
   const s=S.sum;
