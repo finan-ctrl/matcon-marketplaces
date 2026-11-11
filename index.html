@@ -91,6 +91,10 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .tbl.hw th{white-space:normal;line-height:1.25;vertical-align:bottom}
 @media(max-width:1200px){.tbl .hm{display:none}}
 @media(max-width:1500px){.tbl .hl{display:none}}
+@media(max-width:1750px){.tbl .hxl{display:none}}
+.gk{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.sec-t{font:700 12px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin:0 0 8px}
+.gk .kpi .v{font-size:24px}
 .sit{font-size:12px;color:var(--ink-2);line-height:1.3}
 @media(max-width:900px){.tbl .hs{display:none}}
 @media(max-width:640px){.tbl .hx{display:none}}
@@ -105,6 +109,12 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .pill.Dif{background:#fdf3dc;color:#7a5300}.pill.Dif::before{background:var(--st-dif)}
 .pill.Igual{background:#e3f2e3;color:#005c00}.pill.Igual::before{background:var(--st-igual)}
 .pill.Subir{background:#e3eefb;color:#1c4f8f}.pill.Subir::before{background:var(--st-subir)}
+.pill.Ativar{background:#ecebfb;color:#3b2fa0}.pill.Ativar::before{background:#6250d6}
+.pill.Manter{background:#e2f5ee;color:#0d6b4a}.pill.Manter::before{background:#1baf7a}
+.pp{display:inline;font-size:11.5px;font-weight:600;color:var(--ink-2);line-height:1.35}
+.pp i{margin-right:5px;vertical-align:1px}
+.pp i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.errb{display:inline-block;font-size:10.5px;font-weight:700;color:#a32221;background:#fdeceb;border-radius:4px;padding:0 5px;margin-left:4px;cursor:help}
 .chipc{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;margin:1px 3px 1px 0;line-height:1.4;white-space:nowrap}
 .ico{width:22px;height:22px;border-radius:5px;vertical-align:middle;object-fit:cover;box-shadow:0 0 0 1px rgba(17,17,17,.08);margin:1px 4px 1px 0;image-rendering:auto}
 .ico.sm{width:18px;height:18px;margin:0 7px 0 0;vertical-align:-4px}
@@ -213,7 +223,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 <div id="modalHost"></div>
 <div id="toast"></div>
 <div id="loading" class="loading hidden"><div class="spin"></div><div id="loadingMsg">Carregando…</div></div>
-<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden">
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden" multiple>
 
 <script>
 /* =====================================================================
@@ -298,8 +308,11 @@ function setCanais(P){
   }
 }
 function canalExtra(P, id){ return (P.canais_extra||[]).find(c=>c.id===id); }
-const STATUS = ['Inativar','Dif','Igual','Subir'];
-const STATUS_LABEL = { Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir' };
+const STATUS = ['Inativar','Dif','Ativar','Subir','Igual','Manter'];
+const STATUS_LABEL = { Inativar:'Inativar', Dif:'Preço diferente', Ativar:'Ativar anúncio', Subir:'Subir', Igual:'Preço igual', Manter:'Manter' };
+const ACOES = ['Inativar','Dif','Ativar','Subir'];
+/* Status da publicação no Anymarket, do "melhor" para o "pior" */
+const PUB_ORDEM = ['Ativo','Sem estoque','Pausado','Não publicado','Finalizado'];
 
 function mpFromAnymarket(nome){
   const n = String(nome||'').trim().toLowerCase();
@@ -372,6 +385,28 @@ function normalizaAnuncio(row){
     calculo_preco: txt(g('CÁLCULO DE PREÇO')),
     tipo_listagem: txt(g('TIPO DE LISTAGEM')),
     titulo: decodeHtml(txt(g('TÍTULO DO PRODUTO')))
+  };
+}
+
+/* Linha do export de Anúncios do Anymarket (um arquivo por marketplace) */
+function normalizaPublicacao(row){
+  const g = k => { for (const key of Object.keys(row)) if (key.trim().toUpperCase() === k) return row[key]; return null; };
+  const st = txt(g('STATUS DA PUBLICAÇÃO'));
+  return {
+    sku: txt(g('SKU')),
+    marketplace: txt(g('MARKETPLACE')),
+    conta: txt(g('NOME DA CONTA')),
+    titulo: decodeHtml(txt(g('TÍTULO'))),
+    sku_marketplace: txt(g('SKU NO MARKETPLACE')),
+    codigo: txt(g('CÓDIGO NO MARKETPLACE')),
+    status_publicacao: PUB_ORDEM.find(x => x.toLowerCase() === st.toLowerCase()) || st,
+    status_transmissao: txt(g('STATUS DA TRANSMISSÃO')),
+    status_marketplace: txt(g('STATUS NO MARKETPLACE')),
+    estoque: num(g('ESTOQUE DISPONÍVEL')),
+    erro: decodeHtml(txt(g('MENSAGEM DE ERRO')).replace(/<\/li>\s*<li>/gi,' | ').replace(/<[^>]+>/g,'')).trim(),
+    catalogo: txt(g('CATALOGO')),
+    tipo_listagem: txt(g('TIPO DE LISTAGEM')),
+    link: txt(g('LINK'))
   };
 }
 
@@ -463,14 +498,16 @@ function custoMagalu(preco, peso, P){
   return { frete, fixo: 0, com: P.magalu.com, pct: frete===null ? null : (P.magalu.com*preco + frete)/preco };
 }
 
-function statusMP(eleg, ativo, pct, preco, P){
-  const temAtivo = ativo !== null && ativo > 0;
-  if (!eleg && temAtivo) return 'Inativar';
-  if (temAtivo && pct !== null && pct > P.comissao_max) return 'Inativar';
-  if (temAtivo && r2(ativo) !== r2(preco)) return 'Dif';
-  if (temAtivo) return 'Igual';
-  if (eleg && pct !== null && pct <= P.comissao_max) return 'Subir';
-  return '';
+/* publicado = anúncio Ativo no canal; cadastrado = existe anúncio (qualquer status) */
+function statusMP(eleg, pct, P, cad, publicado, precoCanal, preco){
+  const viavel = eleg && pct !== null && pct <= P.comissao_max;
+  if (publicado){
+    if (!viavel) return 'Inativar';
+    if (precoCanal !== null && precoCanal > 0) return r2(precoCanal) === r2(preco) ? 'Igual' : 'Dif';
+    return 'Manter';
+  }
+  if (cad) return viavel ? 'Ativar' : '';
+  return viavel ? 'Subir' : '';
 }
 
 function custoExtra(id, preco, peso, P){
@@ -489,65 +526,103 @@ function custoCanal(id, preco, peso, P){
 }
 
 /* ---------- cálculo completo ---------- */
-function calcula(produtos, anuncios, P){
+function agregaPublicacoes(publicacoes){
+  const agg = {}, mps = new Set(), outros = {};
+  for (const a of publicacoes||[]){
+    const mp = mpFromAnymarket(a.marketplace);
+    if (!MARKETPLACES.some(m=>m.id===mp)) { (outros[a.marketplace] ||= new Set()).add(a.sku); continue; }
+    mps.add(mp);
+    const k = mp + '|' + a.sku;
+    const x = agg[k] ||= { sku:a.sku, n:0, pub:null, erro:false, erros:[], estoque:null, codigos:[], tipos:[], links:[], titulo:a.titulo, status_marketplace:a.status_marketplace };
+    x.n++;
+    const ia = PUB_ORDEM.indexOf(a.status_publicacao), ib = PUB_ORDEM.indexOf(x.pub);
+    if (x.pub === null || (ia >= 0 && (ib < 0 || ia < ib))) { x.pub = a.status_publicacao; x.status_marketplace = a.status_marketplace; }
+    if (/erro/i.test(a.status_transmissao)) { x.erro = true; if (a.erro && !x.erros.includes(a.erro)) x.erros.push(a.erro); }
+    if (a.estoque !== null) x.estoque = Math.max(x.estoque ?? 0, a.estoque);
+    if (a.codigo) x.codigos.push(a.codigo);
+    if (a.tipo_listagem && !x.tipos.includes(a.tipo_listagem)) x.tipos.push(a.tipo_listagem);
+    if (a.link) x.links.push(a.link);
+  }
+  return { agg, mps, outros };
+}
+
+function calcula(produtos, anuncios, publicacoes, P){
+  if (P === undefined && !Array.isArray(publicacoes)) { P = publicacoes; publicacoes = []; }
   setCanais(P);
-  // preço ativo por SKU/marketplace (menor PREÇO POR quando houver duplicidade)
-  const ativos = {}; const outros = {};
-  for (const a of anuncios){
+  // preço no canal (export de preços, opcional) — menor PREÇO POR quando houver duplicidade
+  const precos = {}; const outros = {};
+  for (const a of anuncios||[]){
     const mp = mpFromAnymarket(a.marketplace);
     const preco = a.preco_por ?? a.preco_de;
     if (!MARKETPLACES.some(m=>m.id===mp)) { (outros[a.marketplace] ||= new Set()).add(a.sku); continue; }
     const key = mp + '|' + a.sku;
-    if (!(key in ativos) || (preco !== null && preco < ativos[key])) ativos[key] = preco;
+    if (!(key in precos) || (preco !== null && preco < precos[key])) precos[key] = preco;
   }
-  const catalogo = new Map();
+  const PUB = agregaPublicacoes(publicacoes);
+  for (const [k,v] of Object.entries(PUB.outros)) { outros[k] ||= new Set(); v.forEach(x=>outros[k].add(x)); }
+  const info = (mp, sku) => {
+    const precoCanal = precos[mp+'|'+sku] ?? null;
+    if (PUB.mps.has(mp)){ const pi = PUB.agg[mp+'|'+sku] || null; return { pi, precoCanal, cad: !!pi, publicado: !!pi && pi.pub === 'Ativo' }; }
+    const tem = precoCanal !== null && precoCanal > 0;   // sem export de anúncios: usa o de preços
+    return { pi:null, precoCanal, cad: tem, publicado: tem };
+  };
+  const catalogo = new Set();
   const linhas = [];
   for (const p of produtos){
     if (!p.sku) continue;
     if (txt(p.seller_id) !== txt(P.seller_id)) continue; // universo = Flagship
-    catalogo.set(p.sku, true);
+    catalogo.add(p.sku);
     const e = elegibilidade(p, P);
     const preco = precoRef(p);
     const L = { ...p, preco_ref: preco, elegivel: e.elegivel, motivos: e.motivos, incompleto: e.incompleto, mp: {} };
     for (const m of MARKETPLACES){
       const c = e.elegivel ? custoCanal(m.id, preco, p.peso, P) : null;
-      const ativo = ativos[m.id+'|'+p.sku] ?? null;
+      const I = info(m.id, p.sku);
       L.mp[m.id] = {
-        ativo, frete: c?c.frete:null, com: c?c.com:null, fixo: c?c.fixo:null, pct: c?c.pct:null,
+        ativo: I.precoCanal, cad: I.cad, publicado: I.publicado,
+        pub: I.pi ? I.pi.pub : (I.cad ? 'Ativo' : null), erro: I.pi ? I.pi.erro : false, erros: I.pi ? I.pi.erros : [],
+        estoque_canal: I.pi ? I.pi.estoque : null, n: I.pi ? I.pi.n : (I.cad?1:0), codigos: I.pi ? I.pi.codigos : [], tipos: I.pi ? I.pi.tipos : [], links: I.pi ? I.pi.links : [],
+        frete: c?c.frete:null, com: c?c.com:null, fixo: c?c.fixo:null, pct: c?c.pct:null,
         comissao: c ? r2(c.com * preco) : null,
-        status: statusMP(e.elegivel, ativo, c?c.pct:null, preco, P)
+        status: statusMP(e.elegivel, c?c.pct:null, P, I.cad, I.publicado, I.precoCanal, preco)
       };
     }
     linhas.push(L);
   }
-  // anúncios cujo SKU não está no catálogo Flagship => Inativar
+  // anúncios cujo SKU não está no catálogo Flagship (publicado => Inativar)
   const orfaos = {};
-  for (const key of Object.keys(ativos)){
-    const [mp, sku] = key.split('|');
-    if (!catalogo.has(sku)) (orfaos[mp] ||= []).push({ sku, ativo: ativos[key] });
-  }
-  return { linhas, orfaos, outros };
+  const vistos = new Set();
+  const addOrfao = (mp, sku) => {
+    const k = mp+'|'+sku; if (vistos.has(k) || catalogo.has(sku)) return; vistos.add(k);
+    const I = info(mp, sku);
+    (orfaos[mp] ||= []).push({ sku, ativo: I.precoCanal, cad: I.cad, publicado: I.publicado, pub: I.pi ? I.pi.pub : (I.cad?'Ativo':null), erro: I.pi?I.pi.erro:false, erros: I.pi?I.pi.erros:[], estoque_canal: I.pi?I.pi.estoque:null, titulo: I.pi?I.pi.titulo:'', status: I.publicado ? 'Inativar' : '' });
+  };
+  Object.keys(PUB.agg).forEach(k => { const [mp, ...r] = k.split('|'); addOrfao(mp, r.join('|')); });
+  Object.keys(precos).forEach(k => { const [mp, ...r] = k.split('|'); if (!PUB.mps.has(mp)) addOrfao(mp, r.join('|')); });
+  return { linhas, orfaos, outros, comPublicacoes: [...PUB.mps] };
 }
 
 function resumo(res){
   const flag = res.linhas.filter(l => l.status.toLowerCase()==='habilitado').length;
   const out = { flagship: flag, total: res.linhas.length, elegiveis: res.linhas.filter(l=>l.elegivel).length, mp: {} };
   for (const m of MARKETPLACES){
-    const r = { ativos:0, Inativar:0, Dif:0, Igual:0, Subir:0, orfaos: (res.orfaos[m.id]||[]).length };
-    for (const l of res.linhas){
-      const s = l.mp[m.id];
-      if (s.ativo !== null && s.ativo > 0) r.ativos++;
-      if (s.status) r[s.status]++;
-    }
-    r.ativos += r.orfaos; r.Inativar += r.orfaos;
-    r.final = r.Igual + r.Subir;
+    const r = { cadastrados:0, ativos:0, erros:0, Inativar:0, Dif:0, Ativar:0, Subir:0, Igual:0, Manter:0, pub:{}, orfaos:0 };
+    const conta = (x) => {
+      if (x.cad){ r.cadastrados++; r.pub[x.pub||'—'] = (r.pub[x.pub||'—']||0)+1; }
+      if (x.publicado) r.ativos++;
+      if (x.erro) r.erros++;
+      if (x.status) r[x.status]++;
+    };
+    for (const l of res.linhas) conta(l.mp[m.id]);
+    for (const o of (res.orfaos[m.id]||[])){ conta(o); if (o.publicado) r.orfaos++; }
+    r.final = r.Igual + r.Dif + r.Manter + r.Ativar + r.Subir;
     out.mp[m.id] = r;
   }
   out.outros = Object.fromEntries(Object.entries(res.outros).map(([k,v])=>[k, v.size]));
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+if (typeof module !== 'undefined') module.exports = { normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -556,7 +631,7 @@ if (typeof module !== 'undefined') module.exports = { DEFAULT_PREMISSAS, MARKETP
 const S = {
   sb:null, user:null, local:true,
   P: structuredClone(DEFAULT_PREMISSAS),
-  produtos:[], anuncios:[], acoes:{}, snapshots:[], cargas:[],
+  produtos:[], anuncios:[], publicacoes:[], acoes:{}, snapshots:[], cargas:[],
   res:null, sum:null, tab:'geral',
   f:{}, charts:{}
 };
@@ -564,7 +639,8 @@ const ICONES = {"shopee": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAB
 const ICONES_CONHECIDOS = { 'leroy merlin': ICONES.leroy };
 let MPN = {}, MPS = {};
 function refreshCanais(){ MPN = Object.fromEntries(MARKETPLACES.map(m=>[m.id,m.nome])); MPS = Object.fromEntries(MARKETPLACES.map(m=>[m.id,m.sigla])); buildNav(); }
-const ST_COLOR = { Inativar:'#e34948', Dif:'#eda100', Igual:'#008300', Subir:'#2a78d6' };
+const ST_COLOR = { Inativar:'#e34948', Dif:'#eda100', Ativar:'#6250d6', Subir:'#2a78d6', Igual:'#008300', Manter:'#1baf7a' };
+const PUB_COR = { 'Ativo':'#008300', 'Sem estoque':'#eda100', 'Pausado':'#8a8984', 'Não publicado':'#c3c2b7', 'Finalizado':'#e34948' };
 
 /* ============================ UTIL ============================ */
 const $ = s => document.querySelector(s);
@@ -585,7 +661,7 @@ function statusLabel(l, mp){
 function pill(l, mp){ const s=l.mp[mp].status; return `<span class="pill ${s}">${esc(statusLabel(l,mp))}</span>`; }
 const acaoKey = (sku,mp) => sku + '|' + mp;
 function isDone(l, mp){ const a=S.acoes[acaoKey(l.sku,mp)]; return !!(a && a.concluido && a.acao===l.mp[mp].status); }
-const isAcao = s => s==='Inativar' || s==='Dif' || s==='Subir';
+const isAcao = s => ACOES.includes(s);
 
 /* ============================ SUPABASE ============================ */
 function getConfig(){
@@ -643,14 +719,16 @@ async function fetchAll(table, order){
 async function loadAll(){
   try{
     loading(true,'Carregando dados…');
-    const [prem, produtos, anuncios, acoes, snaps, cargas] = await Promise.all([
+    const [prem, produtos, anuncios, acoes, snaps, cargas, publicacoes] = await Promise.all([
       S.sb.from('mc_premissas').select('*').eq('id',1).maybeSingle(),
       fetchAll('mc_produtos','sku'),
       fetchAll('mc_anuncios','id'),
       fetchAll('mc_acoes','sku'),
       S.sb.from('mc_snapshots').select('*').order('criado_em',{ascending:false}).limit(90),
-      S.sb.from('mc_cargas').select('*').order('criado_em',{ascending:false}).limit(40)
+      S.sb.from('mc_cargas').select('*').order('criado_em',{ascending:false}).limit(40),
+      fetchAll('mc_publicacoes','id').catch(e=>{ console.warn(e); toast('Tabela mc_publicacoes não encontrada: rode o supabase_atualizacao_v2.sql', 8000); return []; })
     ]);
+    S.publicacoes = publicacoes;
     if (prem.data?.dados) S.P = mergeP(prem.data.dados);
     S.produtos = produtos.map(p => ({...p, name:p.name||'', marca:p.marca||'', departamento:p.departamento||'', status:p.status||'', inflamavel:p.inflamavel||'', seller_id:String(p.seller_id??'')}));
     S.anuncios = anuncios;
@@ -669,14 +747,14 @@ function mergeP(d){
 
 /* ============================ CÁLCULO ============================ */
 function recalc(){
-  S.res = calcula(S.produtos, S.anuncios, S.P);
+  S.res = calcula(S.produtos, S.anuncios, S.publicacoes, S.P);
   S.sum = resumo(S.res);
   refreshCanais();
   S.deps = [...new Set(S.res.linhas.map(l=>l.departamento).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
 function pendentes(mp){
   let n=0; for (const l of S.res.linhas) if (isAcao(l.mp[mp].status) && !isDone(l,mp)) n++;
-  return n + (S.res.orfaos[mp]||[]).filter(o=>!S.acoes[acaoKey(o.sku,mp)]?.concluido).length;
+  return n + (S.res.orfaos[mp]||[]).filter(o=>o.status==='Inativar' && !S.acoes[acaoKey(o.sku,mp)]?.concluido).length;
 }
 
 /* ============================ NAV / RENDER ============================ */
@@ -719,10 +797,13 @@ const gridC = '#efefea';
 function legendHTML(items){ return `<div class="legend">${items.map(([n,c])=>`<span><i style="background:${c}"></i>${esc(n)}</span>`).join('')}</div>`; }
 
 /* ======================= VISÃO GERAL ======================= */
+const CHART_ST = [['Inativar','Inativar',ST_COLOR.Inativar],['Dif','Preço diferente',ST_COLOR.Dif],['Ativar','Ativar anúncio',ST_COLOR.Ativar],['Subir','Subir',ST_COLOR.Subir],['manter','Manter / preço igual',ST_COLOR.Manter]];
+function temPreco(mp){ return S.anuncios.some(a=>mpFromAnymarket(a.marketplace)===mp); }
 function renderGeral(){
   const m=$('#main'), s=S.sum;
   if (!S.res.linhas.length){ m.innerHTML = head('Visão geral','Acompanhamento do sortimento MATCON nos marketplaces') + semDados(); return; }
   const totAtivos = MARKETPLACES.reduce((a,x)=>a+s.mp[x.id].ativos,0);
+  const totCad = MARKETPLACES.reduce((a,x)=>a+(s.mp[x.id].cadastrados||0),0);
   const totFinal = MARKETPLACES.reduce((a,x)=>a+s.mp[x.id].final,0);
   const totPend = MARKETPLACES.reduce((a,x)=>a+pendentes(x.id),0);
   const ultima = S.cargas[0];
@@ -730,25 +811,25 @@ function renderGeral(){
   <div class="grid g4" style="margin-bottom:16px">
     ${kpi('SKUs Flagship habilitados', fN(s.flagship), fN(s.total)+' SKUs no catálogo do seller', true)}
     ${kpi('Elegíveis para marketplace', fN(s.elegiveis), fP(s.elegiveis/(s.flagship||1)) + ' dos habilitados')}
-    ${kpi('Anúncios ativos', fN(totAtivos), 'Final projetado: ' + fN(totFinal))}
-    ${kpi('Ações pendentes', fN(totPend), 'Inativar, ajustar preço e subir')}
+    ${kpi('Anúncios publicados', fN(totAtivos), fN(totCad) + ' cadastrados · final projetado ' + fN(totFinal))}
+    ${kpi('Ações pendentes', fN(totPend), 'Inativar, ajustar preço, ativar e subir')}
   </div>
   <div class="grid g3" style="margin-bottom:16px">
     <div class="card span2">
-      <div class="card-h"><div><h3>Resumo por marketplace</h3><div class="sub">Mesma lógica do Simulador · Final = preço igual + subir · clique em um número para abrir a lista</div></div>
+      <div class="card-h"><div><h3>Resumo por marketplace</h3><div class="sub">Publicado = anúncio Ativo no Anymarket · Final = o que fica publicado depois das ações · clique em um número para abrir a lista</div></div>
       <button class="btn sm" onclick="exportResumo()">Exportar</button></div>
       <table class="tbl">
-        <colgroup><col style="width:18%"><col style="width:10%"><col style="width:10%"><col style="width:12%"><col style="width:13%"><col style="width:10%"><col style="width:11%"><col class="hs" style="width:13%"></colgroup><thead><tr><th>Marketplace</th><th class="n">Ativos</th><th class="n">Inativar</th><th class="n">Preço dif.</th><th class="n">Preço igual</th><th class="n">Subir</th><th class="n">Final</th><th class="n hs">Pendentes</th></tr></thead>
+        <colgroup><col style="width:17%"><col style="width:11%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:8%"><col class="hs" style="width:11%"></colgroup><thead><tr><th>Marketplace</th><th class="n">Cadastrados</th><th class="n">Publicados</th><th class="n">Inativar</th><th class="n">Preço dif.</th><th class="n">Ativar</th><th class="n">Subir</th><th class="n">Final</th><th class="n hs">Pendentes</th></tr></thead>
         <tbody>
-          <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
-          ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${icoHTML(x.id,'sm')}${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','acoes')`,'Ver todas as ações '+x.nome)}</td><td class="n">${L(fN(r.ativos),'ativos','Ativos')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${L(fN(r.Dif),'Dif','Preço diferente')}</td><td class="n">${L(fN(r.Igual),'Igual','Preço igual')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final (igual + subir)')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
-          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· sem regras</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="6" style="text-align:left" class="muted">Canal sem regras de comissão · ${lk('<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
+          <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
+          ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${icoHTML(x.id,'sm')}${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','acoes')`,'Ver todas as ações '+x.nome)}</td><td class="n">${L(fN(r.cadastrados),'cad','Cadastrados')}</td><td class="n">${L(fN(r.ativos),'ativos','Publicados')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${temPreco(x.id)?L(fN(r.Dif),'Dif','Preço diferente'):'<span class="muted" title="Envie o export de preços do Anymarket para comparar">—</span>'}</td><td class="n">${L(fN(r.Ativar),'Ativar','Ativar anúncio')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final projetado')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
+          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· sem regras</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="7" style="text-align:left" class="muted">Canal sem regras de comissão · ${lk('<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
         </tbody>
       </table>
     </div>
     <div class="card">
       <h3>Status dos SKUs por marketplace</h3><div class="sub">Clique em uma barra para abrir a lista</div>
-      ${legendHTML(STATUS.map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}
+      ${legendHTML(CHART_ST.map(x=>[x[1],x[2]]))}
       <div class="chart-box sm"><canvas id="chStatus"></canvas></div>
     </div>
   </div>
@@ -759,16 +840,16 @@ function renderGeral(){
     </div>
     <div class="card">
       <div class="card-h"><div><h3>Evolução</h3><div class="sub">Fotografias registradas a cada carga</div></div>
-      <select id="evoMetric" class="btn sm" onchange="drawEvo()"><option value="final">Final projetado</option><option value="ativos">Ativos</option><option value="pend">Ações (inativar + dif. + subir)</option></select></div>
+      <select id="evoMetric" class="btn sm" onchange="drawEvo()"><option value="final">Final projetado</option><option value="ativos">Publicados</option><option value="pend">Ações (inativar + dif. + ativar + subir)</option></select></div>
       <div id="evoWrap"></div>
     </div>
   </div>`;
   // status chart
   S.charts.status = new Chart($('#chStatus'), {
     type:'bar',
-    data:{ labels:MARKETPLACES.map(x=>x.nome), datasets: STATUS.map(st=>({ label:STATUS_LABEL[st], data:MARKETPLACES.map(x=>s.mp[x.id][st]), backgroundColor:ST_COLOR[st], borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:22 })) },
+    data:{ labels:MARKETPLACES.map(x=>x.nome), datasets: CHART_ST.map(([st,lb,cor])=>({ label:lb, data:MARKETPLACES.map(x=>st==='manter' ? s.mp[x.id].Igual+s.mp[x.id].Manter : s.mp[x.id][st]), backgroundColor:cor, borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:22 })) },
     options:{ indexAxis:'y', maintainAspectRatio:false, scales:{ x:{stacked:true, grid:{color:gridC}, border:{display:false}}, y:{stacked:true, grid:{display:false}, border:{display:false}} },
-      onClick:(e,els)=>{ if(els.length){ const mp=MARKETPLACES[els[0].index].id, st=STATUS[els[0].datasetIndex]; setTimeout(()=>abrirLista(mp,st),0); } },
+      onClick:(e,els)=>{ if(els.length){ const mp=MARKETPLACES[els[0].index].id, st=CHART_ST[els[0].datasetIndex][0]; setTimeout(()=>abrirLista(mp,st),0); } },
       onHover:(e,els)=>{ e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins:{ tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${fN(c.raw)}`, footer:()=>'Clique para abrir a lista' } } } }
   });
@@ -788,7 +869,7 @@ function drawEvo(){
   if (snaps.length < 2){ w.innerHTML = `<div class="empty"><b>${snaps.length ? '1 fotografia registrada' : 'Sem histórico ainda'}</b>O gráfico aparece a partir da segunda carga. Cada upload registra uma fotografia do resumo.</div>`; return; }
   const cols = Object.fromEntries(MARKETPLACES.map(m=>[m.id, {shopee:'#eb6834', meli:'#eda100', magalu:'#2a78d6'}[m.id] || m.bg]));
   w.innerHTML = legendHTML(MARKETPLACES.map(x=>[x.nome,cols[x.id]])) + '<div class="chart-box sm"><canvas id="chEvo"></canvas></div>';
-  const val = (r) => met==='pend' ? (r.Inativar+r.Dif+r.Subir) : r[met];
+  const val = (r) => met==='pend' ? (r.Inativar+r.Dif+(r.Ativar||0)+r.Subir) : r[met];
   S.charts.evo = new Chart($('#chEvo'), {
     type:'line',
     data:{ labels:snaps.map(x=>fDs(x.criado_em)), datasets:MARKETPLACES.map(x=>({ label:x.nome, data:snaps.map(sn=>sn.resumo?.mp?.[x.id] ? val(sn.resumo.mp[x.id]) : null), borderColor:cols[x.id], backgroundColor:cols[x.id], borderWidth:2, pointRadius:3, pointHoverRadius:5, tension:.25 })) },
@@ -798,7 +879,9 @@ function drawEvo(){
 }
 function lk(html, fn, title){ return `<a class="lnk" role="link" tabindex="0" title="${esc(title)}" onclick="${fn}" onkeydown="if(event.key==='Enter')${fn}">${html}</a>`; }
 function abrirLista(mp, st, pend=false){
-  S.f[mp] = { q:'', st, dep:'', oc:'', pend:!!pend, sort:'pct', dir:1, page:0 };
+  let pub='';
+  if (st==='ativos'){ st='todos'; pub='Ativo'; } else if (st==='cad'){ st='todos'; pub='cad'; }
+  S.f[mp] = { q:'', st, pub, dep:'', oc:'', pend:!!pend, sort:'pct', dir:1, page:0 };
   goTab(mp);
   setTimeout(()=>$('#mpList')?.scrollIntoView({behavior:'smooth',block:'start'}), 60);
 }
@@ -820,28 +903,48 @@ function renderMP(mp){
   const m=$('#main');
   if (!S.res.linhas.length){ m.innerHTML = head(MPN[mp],'Gestão do sortimento') + semDados(); return; }
   const r=S.sum.mp[mp];
-  const f = S.f[mp] ||= { q:'', st:'acoes', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
+  const f = S.f[mp] ||= { q:'', st:'acoes', pub:'', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
+  f.pub ??= '';
   const cx = canalExtra(S.P, mp);
   const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : mp==='magalu' ? `Comissão ${fP(S.P.magalu.com)} + frete por peso` : `Comissão ${fP(cx?.com)}${cx?.fixo?' + fixo '+fR(cx.fixo):''}${(cx?.faixas_peso||[]).length?' + frete por peso':''}`;
-  const card = (st, lb, v, d) => `<div class="card kpi click ${f.st===st?'sel':''}" onclick="setMPf('${mp}','st','${st}')"><div class="lb">${st in ST_COLOR?`<span class="dot" style="background:${ST_COLOR[st]}"></span>`:''}${lb}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+  const temPub = S.res.comPublicacoes.includes(mp), preco = temPreco(mp);
   const pend = st => S.res.linhas.filter(l=>l.mp[mp].status===st && !isDone(l,mp)).length;
+  const cardP = (v, lb, n, d, cor) => `<div class="card kpi click ${f.pub===v?'sel':''}" onclick="setMPf('${mp}','pub','${v}')"><div class="lb">${cor?`<span class="dot" style="background:${cor};border-radius:50%"></span>`:''}${lb}</div><div class="v">${fN(n)}</div><div class="d">${d}</div></div>`;
+  const cardA = (st, lb, n, d) => `<div class="card kpi click ${f.st===st?'sel':''}" onclick="setMPf('${mp}','st','${st}')"><div class="lb">${ST_COLOR[st]||st==='manter'?`<span class="dot" style="background:${ST_COLOR[st]||ST_COLOR.Manter}"></span>`:''}${lb}</div><div class="v">${fN(n)}</div><div class="d">${d}</div></div>`;
+  const P_ = r.pub||{};
   m.innerHTML = head(icoHTML(mp,'lg') + esc(MPN[mp]), regra + ' · comissão estimada máxima de ' + fP(S.P.comissao_max,0) + ' · preço de referência = Preço Por do site') + `
-  <div class="grid g5" style="margin-bottom:16px">
-    ${card('ativos','Ativos', fN(r.ativos), 'Final projetado: '+fN(r.final))}
-    ${card('Inativar','Inativar', fN(r.Inativar), fN(pend('Inativar')+(S.res.orfaos[mp]||[]).length)+' pendentes')}
-    ${card('Dif','Preço diferente', fN(r.Dif), fN(pend('Dif'))+' pendentes')}
-    ${card('Igual','Preço igual', fN(r.Igual), 'Ativos e alinhados ao site')}
-    ${card('Subir','Subir', fN(r.Subir), fN(pend('Subir'))+' pendentes')}
+  ${temPub ? '' : `<div class="note" style="margin-bottom:12px"><b>Sem export de anúncios deste canal.</b> Os números abaixo usam o export de preços (todo anúncio com preço conta como publicado). Envie o export de Anúncios do ${esc(MPN[mp])} na aba Cargas para ver cadastrados, pausados e erros.</div>`}
+  <div class="sec-t">Publicações no Anymarket</div>
+  <div class="grid gk" style="margin-bottom:14px">
+    ${cardP('cad','Cadastrados', r.cadastrados, 'SKUs com anúncio no canal')}
+    ${cardP('Ativo','Publicados', P_['Ativo']||0, 'Status da publicação Ativo', PUB_COR['Ativo'])}
+    ${cardP('Sem estoque','Sem estoque', P_['Sem estoque']||0, 'Cadastrado, sem estoque', PUB_COR['Sem estoque'])}
+    ${cardP('Pausado','Pausados', P_['Pausado']||0, 'Cadastrado e pausado', PUB_COR['Pausado'])}
+    ${cardP('Não publicado','Não publicados', P_['Não publicado']||0, 'Cadastrado, nunca publicado', PUB_COR['Não publicado'])}
+    ${cardP('Finalizado','Finalizados', P_['Finalizado']||0, 'Encerrado, banido ou deletado', PUB_COR['Finalizado'])}
+    ${cardP('erro','Com erro', r.erros, 'Erro de transmissão no Anymarket', '#a32221')}
+  </div>
+  <div class="sec-t">Ações</div>
+  <div class="grid gk" style="margin-bottom:16px">
+    ${cardA('Inativar','Inativar', r.Inativar, fN(pend('Inativar')+(S.res.orfaos[mp]||[]).filter(o=>o.status==='Inativar').length)+' pendentes · publicado fora das regras')}
+    ${preco ? cardA('Dif','Preço diferente', r.Dif, fN(pend('Dif'))+' pendentes · canal ≠ Preço Por') : ''}
+    ${cardA('Ativar','Ativar anúncio', r.Ativar, fN(pend('Ativar'))+' pendentes · já cadastrado, não publicado')}
+    ${cardA('Subir','Subir', r.Subir, fN(pend('Subir'))+' pendentes · elegível e sem anúncio')}
+    ${cardA('manter','Manter', r.Igual+r.Manter, 'Publicado e dentro das regras')}
+    ${cardA('final','Final projetado', r.final, 'Publicados depois das ações')}
   </div>
   <div class="grid g2" style="margin-bottom:16px">
+    <div class="card"><h3>Status das publicações</h3><div class="sub">SKUs cadastrados no canal por status no Anymarket · clique para filtrar</div><div class="bars" id="pubBars"></div></div>
+    <div class="card"><h3>Erros de transmissão mais comuns</h3><div class="sub">Mensagens do Anymarket · um SKU pode ter mais de uma</div><div class="bars" id="errBars"></div></div>
     <div class="card"><h3>Comissão estimada dos SKUs elegíveis</h3><div class="sub">(comissão + ${mp==='shopee'?'fixo':isExtra(mp)?'fixo + frete':'frete'}) ÷ Preço Por · barras cinza passam de ${fP(S.P.comissao_max,0)} e ficam de fora</div><div class="chart-box sm"><canvas id="chHist"></canvas></div></div>
-    <div class="card"><h3>Onde estão as ações</h3><div class="sub">Top departamentos por quantidade de SKUs em cada ação</div>${legendHTML(['Inativar','Dif','Subir'].map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}<div class="chart-box sm"><canvas id="chDep"></canvas></div></div>
+    <div class="card"><h3>Onde estão as ações</h3><div class="sub">Top departamentos por quantidade de SKUs em cada ação</div>${legendHTML(ACOES.filter(x=>x!=='Dif'||preco).map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}<div class="chart-box sm"><canvas id="chDep"></canvas></div></div>
   </div>
   <div class="card" id="mpList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="mpListTit"></h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportMP('${mp}')">Exportar para Excel</button></div>
     <div class="filters">
       <input type="search" id="fq" placeholder="Buscar SKU, nome ou EAN" value="${esc(f.q)}">
-      <select id="fst">${[['acoes','Todas as ações'],['ativos','Ativos'],['Inativar','Inativar'],['Dif','Preço diferente'],['Igual','Preço igual'],['Subir','Subir'],['final','Final (igual + subir)'],['inviavel','Inviável (comissão alta)'],['todos','Todos os SKUs']].map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
+      <select id="fst">${ST_OPTS.filter(o=>o[0]!=='Dif'||preco).map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
+      <select id="fpub">${PUB_OPTS.map(([v,t])=>`<option value="${v}" ${f.pub===v?'selected':''}>${t}</option>`).join('')}</select>
       <select id="fdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
       <select id="foc">${ocOptions(mp).map(([v,t])=>`<option value="${v}" ${f.oc===v?'selected':''}>${t}</option>`).join('')}</select>
       <label><input type="checkbox" class="chk" id="fpend" ${f.pend?'checked':''}> Só pendentes</label>
@@ -849,19 +952,22 @@ function renderMP(mp){
     <div id="mpTable"></div>
   </div>`;
   $('#fq').oninput = e => { f.q=e.target.value; f.page=0; drawMPTable(mp); };
-  $('#fst').onchange = e => setMPf(mp,'st',e.target.value);
+  $('#fst').onchange = e => { f.st=e.target.value; f.page=0; renderMP(mp); };
+  $('#fpub').onchange = e => { f.pub=e.target.value; f.page=0; renderMP(mp); };
   $('#fdep').onchange = e => { f.dep=e.target.value; f.page=0; drawMPTable(mp); };
   $('#fpend').onchange = e => { f.pend=e.target.checked; f.page=0; drawMPTable(mp); };
   $('#foc').onchange = e => { f.oc=e.target.value; f.page=0; drawMPTable(mp); };
   drawMPCharts(mp); drawMPTable(mp);
 }
+const ST_OPTS = [['acoes','Todas as ações'],['Inativar','Inativar'],['Dif','Preço diferente'],['Ativar','Ativar anúncio'],['Subir','Subir'],['manter','Manter'],['final','Final projetado'],['inviavel','Inviável (comissão alta)'],['todos','Todos os SKUs']];
+const PUB_OPTS = [['','Qualquer publicação'],['cad','Cadastrado (qualquer status)'],['nc','Não cadastrado'],['Ativo','Publicado (Ativo)'],['Sem estoque','Sem estoque'],['Pausado','Pausado'],['Não publicado','Não publicado'],['Finalizado','Finalizado'],['erro','Com erro de transmissão']];
 function ocOptions(mp){
   const o = MARKETPLACES.filter(m=>m.id!==mp);
-  return [['','Todos os canais'],['algum','Ativo em outro canal'],['nenhum','Só neste canal'],
-    ...o.map(m=>['mp:'+m.id,(m.id==='shopee'?'Ativo na ':'Ativo no ')+m.nome]), ['todos2', o.length===2 ? 'Ativo em '+o.map(m=>MPS[m.id]).join(' e ') : 'Ativo em todos os outros canais']];
+  return [['','Todos os canais'],['algum','Publicado em outro canal'],['nenhum','Só neste canal'],
+    ...o.map(m=>['mp:'+m.id,(m.id==='shopee'?'Publicado na ':'Publicado no ')+m.nome]), ['todos2', o.length===2 ? 'Publicado em '+o.map(m=>MPS[m.id]).join(' e ') : 'Publicado em todos os outros canais']];
 }
 function outrosCanais(sku, l, mp){
-  return MARKETPLACES.filter(m=>m.id!==mp && (l ? l.mp[m.id].ativo>0 : (S.res.orfaos[m.id]||[]).some(o=>o.sku===sku))).map(m=>m.id);
+  return MARKETPLACES.filter(m=>m.id!==mp && (l ? l.mp[m.id].publicado : (S.res.orfaos[m.id]||[]).some(o=>o.sku===sku && o.publicado))).map(m=>m.id);
 }
 function iconeCanal(id){
   if (ICONES[id]) return ICONES[id];
@@ -870,27 +976,59 @@ function iconeCanal(id){
 }
 function icoHTML(id, cls=''){ const m=MARKETPLACES.find(x=>x.id===id), src=iconeCanal(id); return src && m ? `<img class="ico ${cls}" src="${src}" alt="${esc(m.nome)}">` : ''; }
 function chipCanal(id){ const m=MARKETPLACES.find(x=>x.id===id); if(!m) return ''; const src=iconeCanal(id);
-  return src ? `<img class="ico" src="${src}" alt="${esc(m.nome)}" title="Ativo no ${esc(m.nome)}">` : `<span class="chipc" style="background:${esc(m.bg)};color:${esc(m.fg)}" title="Ativo no ${esc(m.nome)}">${esc(m.sigla)}</span>`; }
+  return src ? `<img class="ico" src="${src}" alt="${esc(m.nome)}" title="Publicado no ${esc(m.nome)}">` : `<span class="chipc" style="background:${esc(m.bg)};color:${esc(m.fg)}" title="Publicado no ${esc(m.nome)}">${esc(m.sigla)}</span>`; }
 function chipsCanais(ids){ return ids.map(chipCanal).join('') || '<span class="muted">—</span>'; }
 function canalCom(mp){ return mp in DEFAULT_PREMISSAS ? S.P[mp].com : (canalExtra(S.P,mp)?.com ?? 0); }
 function isExtra(mp){ return !!MARKETPLACES.find(m=>m.id===mp)?.extra; }
+/* Status da publicação (célula) */
+function pubHTML(x){
+  if (!x || !x.cad) return '<span class="muted" style="font-size:12px">Não cadastrado</span>';
+  const st = x.pub || '—';
+  return `<span class="pp"><i style="background:${PUB_COR[st]||'#c3c2b7'}"></i>${esc(st)}${x.n>1?` <span class="muted">(${x.n})</span>`:''}</span>${x.erro?`<span class="errb" title="${esc((x.erros||[]).join(' | ')||'Erro de transmissão')}">Erro</span>`:''}`;
+}
 /* Motivo por trás da ação de cada SKU no canal */
-function situacao(l, mp){
-  if (!l) return 'SKU anunciado que não está no catálogo Flagship (seller ' + S.P.seller_id + ')';
+function situacao(l, mp, o){
+  if (!l){
+    if (!o || !o.publicado) return 'Anúncio de SKU que não está no catálogo Flagship (seller ' + S.P.seller_id + ')' + (o?.pub ? ' · ' + o.pub.toLowerCase() : '');
+    return 'Publicado, mas o SKU não está no catálogo Flagship (seller ' + S.P.seller_id + ')';
+  }
   const x = l.mp[mp], s = x.status, lim = S.P.comissao_max;
+  const anuncio = x.cad ? (x.publicado ? 'publicado' : 'anúncio ' + String(x.pub||'').toLowerCase()) : 'sem anúncio';
   if (!l.elegivel) return 'Não elegível: ' + l.motivos.map(m => {
     if (m.startsWith('Dimensão')){ const d=[['altura',l.altura],['largura',l.largura],['profundidade',l.profundidade]].filter(x=>(x[1]||0)>=S.P.dim_max).map(x=>x[0]+' '+fN(x[1],x[1]%1?1:0)+' cm'); return m+' ('+d.join(', ')+')'; }
     if (m.startsWith('Peso')) return m+' ('+fN(l.peso,1)+' kg)';
-    return m; }).join(' · ');
-  if (x.pct == null) return 'Sem frete cadastrado para ' + fN(l.peso,3) + ' kg';
-  if (s==='Inativar' || !s) return 'Comissão estimada ' + fP(x.pct) + ' acima do limite de ' + fP(lim,0);
+    return m; }).join(' · ') + (s==='Inativar' ? '' : ' · ' + anuncio);
+  if (x.pct == null) return 'Sem frete cadastrado para ' + fN(l.peso,3) + ' kg · ' + anuncio;
+  if (s==='Inativar' || !s) return 'Comissão estimada ' + fP(x.pct) + ' acima do limite de ' + fP(lim,0) + (s ? '' : ' · ' + anuncio);
   if (s==='Dif'){ const d = x.ativo - l.preco_ref; return 'Canal ' + (d>0?'acima':'abaixo') + ' do site em ' + fR(Math.abs(d)) + ' (' + (d>0?'+':'−') + fN(Math.abs(d)/l.preco_ref*100,1) + '%)'; }
-  if (s==='Igual') return 'Preço igual ao site · comissão ' + fP(x.pct);
-  if (s==='Subir') return 'Elegível e fora do canal · comissão ' + fP(x.pct);
+  if (s==='Igual') return 'Publicado com preço igual ao site · comissão ' + fP(x.pct);
+  if (s==='Manter') return 'Publicado dentro das regras · comissão ' + fP(x.pct);
+  if (s==='Ativar') return 'Já cadastrado (' + String(x.pub||'').toLowerCase() + ') e elegível · comissão ' + fP(x.pct);
+  if (s==='Subir') return 'Elegível e sem anúncio no canal · comissão ' + fP(x.pct);
   return '';
 }
-function setMPf(mp,k,v){ const f=S.f[mp]; f[k] = (k==='st' && f.st===v) ? 'acoes' : v; f.page=0; renderMP(mp); }
+function errHTML(erros){
+  if (!erros || !erros.length) return '';
+  const t = erros[0], curto = t.length > 150 ? t.slice(0, t.lastIndexOf(' ', 145)) : t;
+  return `<div style="color:#a32221;font-size:11.5px;margin-top:3px;line-height:1.3">Erro: ${esc(curto)}${(curto!==t||erros.length>1)?` <a class="lnk" onclick="verErro(this)" data-e="${esc(erros.join('\n\n'))}">ver completo</a>`:''}</div>`;
+}
+function verErro(a){
+  $('#modalHost').innerHTML = `<div class="overlay" onclick="if(event.target===this)this.remove()"><div class="modal" style="max-width:640px"><h2>Mensagem de erro do Anymarket</h2><p style="white-space:pre-wrap;color:var(--ink)">${esc(a.dataset.e)}</p><div class="act"><button class="btn pri" onclick="this.closest('.overlay').remove()">Fechar</button></div></div></div>`;
+}
+function setMPf(mp,k,v){ const f=S.f[mp]; f[k] = (f[k]===v) ? (k==='st'?'acoes':'') : v; f.page=0; renderMP(mp); setTimeout(()=>$('#mpList')?.scrollIntoView({behavior:'smooth',block:'start'}),40); }
 function drawMPCharts(mp){
+  const r=S.sum.mp[mp], f=S.f[mp];
+  // status das publicações
+  const ordem = PUB_ORDEM.filter(p=>r.pub[p]);
+  const elegNC = S.res.linhas.filter(l=>!l.mp[mp].cad && l.elegivel).length;
+  const itens = [...ordem.map(p=>[p,p,r.pub[p],PUB_COR[p]]), ['nc','Não cadastrado (elegível)',elegNC,'#e6e6e1']];
+  const mx = Math.max(1,...itens.filter(i=>i[0]!=='nc').map(i=>i[2]));
+  $('#pubBars').innerHTML = r.cadastrados || elegNC ? itens.map(([v,lb,n,c])=>`<div class="bar-row" style="cursor:pointer" onclick="${v==='nc'?`S.f['${mp}'].st='todos';`:''}setMPf('${mp}','pub','${v}')" title="${esc(lb)}: ${fN(n)} SKUs"><span class="nm">${esc(lb)}</span><span class="tr"><span class="fl" style="display:block;width:${Math.min(100,n/mx*100)}%;background:${c}"></span></span><span class="vl">${fN(n)}</span></div>`).join('') : '<div class="empty">Sem anúncios carregados.</div>';
+  // erros
+  const errs={}; S.res.linhas.forEach(l=>(l.mp[mp].erros||[]).forEach(e=>{ const k=e.length>110?e.slice(0,e.lastIndexOf(' ',105))+'…':e; errs[k]=(errs[k]||0)+1; }));
+  (S.res.orfaos[mp]||[]).forEach(o=>(o.erros||[]).forEach(e=>{ const k=e.length>110?e.slice(0,e.lastIndexOf(' ',105))+'…':e; errs[k]=(errs[k]||0)+1; }));
+  const ea=Object.entries(errs).sort((a,b)=>b[1]-a[1]).slice(0,6), em=Math.max(1,...ea.map(e=>e[1]));
+  $('#errBars').innerHTML = ea.length ? ea.map(([k,n])=>`<div class="bar-row" style="grid-template-columns:minmax(0,1fr) 90px 44px" title="${esc(k)}"><span class="nm" style="font-size:12px">${esc(k)}</span><span class="tr"><span class="fl" style="display:block;width:${n/em*100}%;background:#e34948"></span></span><span class="vl">${fN(n)}</span></div>`).join('') + `<div style="margin-top:4px"><a class="lnk" onclick="setMPf('${mp}','pub','erro')">Ver os ${fN(r.erros)} SKUs com erro</a></div>` : '<div class="empty">Nenhum erro de transmissão.</div>';
   // histograma
   const bins=[0,.05,.10,.15,.20,.25,.30,.35,.40,.50]; const lab=[], cnt=[];
   for (let i=0;i<bins.length;i++){ lab.push(i<bins.length-1 ? `${bins[i]*100}–${bins[i+1]*100}%` : `≥ ${bins[i]*100}%`); cnt.push(0); }
@@ -900,36 +1038,55 @@ function drawMPCharts(mp){
     data:{ labels:lab, datasets:[{ data:cnt, backgroundColor:bins.map(b=>b<lim-1e-9?'#94BF26':'#cfcfc8'), borderRadius:{topLeft:4,topRight:4}, borderSkipped:'bottom', maxBarThickness:34 }] },
     options:{ maintainAspectRatio:false, scales:{ x:{grid:{display:false}}, y:{grid:{color:gridC}, border:{display:false}} }, plugins:{ tooltip:{ callbacks:{ label:c=>` ${fN(c.raw)} SKUs elegíveis` } } } } });
   // departamentos
-  const dep={}; S.res.linhas.forEach(l=>{ const s=l.mp[mp].status; if(!isAcao(s)) return; const d=l.departamento||'(sem departamento)'; (dep[d] ||= {Inativar:0,Dif:0,Subir:0,t:0}); dep[d][s]++; dep[d].t++; });
+  const sts = ACOES.filter(x=>x!=='Dif'||temPreco(mp));
+  const dep={}; S.res.linhas.forEach(l=>{ const s=l.mp[mp].status; if(!sts.includes(s)) return; const d=l.departamento||'(sem departamento)'; (dep[d] ||= Object.fromEntries([...sts.map(x=>[x,0]),['t',0]])); dep[d][s]++; dep[d].t++; });
   const top = Object.entries(dep).sort((a,b)=>b[1].t-a[1].t).slice(0,8);
   S.charts.dep = new Chart($('#chDep'), { type:'bar',
-    data:{ labels:top.map(t=>t[0]), datasets:['Inativar','Dif','Subir'].map(st=>({ label:STATUS_LABEL[st], data:top.map(t=>t[1][st]), backgroundColor:ST_COLOR[st], borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:14 })) },
+    data:{ labels:top.map(t=>t[0]), datasets:sts.map(st=>({ label:STATUS_LABEL[st], data:top.map(t=>t[1][st]), backgroundColor:ST_COLOR[st], borderColor:'#fff', borderWidth:{left:1,right:1}, borderSkipped:false, barThickness:14 })) },
     options:{ indexAxis:'y', maintainAspectRatio:false, scales:{ x:{stacked:true,grid:{color:gridC},border:{display:false}}, y:{stacked:true,grid:{display:false},border:{display:false},ticks:{crossAlign:'far',autoSkip:false}} },
+      onClick:(e,els)=>{ if(els.length){ const st=sts[els[0].datasetIndex], d=top[els[0].index][0]; setTimeout(()=>{ Object.assign(S.f[mp],{st,dep:d==='(sem departamento)'?'':d,page:0}); renderMP(mp); $('#mpList').scrollIntoView({behavior:'smooth'}); },0); } },
+      onHover:(e,els)=>{ e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins:{ tooltip:{ mode:'index', callbacks:{ title:i=>top[i[0].dataIndex][0], label:c=>` ${c.dataset.label}: ${fN(c.raw)}` } } } } });
+}
+function passaPub(fpub, x){
+  if (!fpub) return true;
+  if (fpub==='cad') return !!x.cad;
+  if (fpub==='nc') return !x.cad;
+  if (fpub==='erro') return !!x.erro;
+  return x.cad && x.pub===fpub;
+}
+function passaSt(fst, s, l, x){
+  if (fst==='todos') return true;
+  if (fst==='acoes') return isAcao(s);
+  if (fst==='manter') return s==='Igual' || s==='Manter';
+  if (fst==='final') return ['Igual','Dif','Manter','Ativar','Subir'].includes(s);
+  if (fst==='inviavel') return !!(l && l.elegivel && x.pct!=null && x.pct>S.P.comissao_max);
+  return s===fst;
 }
 function mpRows(mp){
   const f0=S.f[mp]; const q=f0.q.trim().toLowerCase();
   // busca por SKU/nome/EAN procura em todos os SKUs, ignorando os outros filtros
-  const f = q ? { ...f0, st:'todos', dep:'', pend:false, oc:'' } : f0;
-  let rows = S.res.linhas.filter(l=>{
+  const f = q ? { ...f0, st:'todos', pub:'', dep:'', pend:false, oc:'' } : f0;
+  const linha = (l, x, o) => ({ l, o, x, sku:l?l.sku:o.sku, name:l?l.name:(o.titulo||'(SKU fora do catálogo Flagship)'), dep:l?l.departamento:'', stock:l?l.stock:null, estc:x.estoque_canal, pde:l?l.price:null, ppor:l?l.preco_ref:null, ativo:x.ativo,
+    frete: !l ? null : isExtra(mp) ? (x.frete==null && x.fixo==null ? null : (x.frete||0)+(x.fixo||0)) : (x.frete ?? x.fixo), comissao: !l ? null : mp==='shopee' ? x.com : x.comissao, pct:l?x.pct:null,
+    st: l ? statusLabel(l,mp) : (o.status ? STATUS_LABEL[o.status] : 'Fora do catálogo'), s: x.status, pubTxt: x.cad ? (x.pub||'') : 'Não cadastrado', sit: situacao(l,mp,o), orfao:!l });
+  let rows = [];
+  for (const l of S.res.linhas){
     const x=l.mp[mp], s=x.status;
-    if (f.st==='acoes' && !isAcao(s)) return false;
-    if (f.st==='ativos' && !(x.ativo>0)) return false;
-    if (STATUS.includes(f.st) && s!==f.st) return false;
-    if (f.st==='inviavel' && !(l.elegivel && !s)) return false;
-    if (f.st==='final' && s!=='Igual' && s!=='Subir') return false;
-    if (f.dep && l.departamento!==f.dep) return false;
-    if (f.pend && (!isAcao(s) || isDone(l,mp))) return false;
-    if (q && !(l.sku.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || l.marca.toLowerCase().includes(q) || (l.ean||'').includes(q))) return false;
-    return true;
-  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete: isExtra(mp) ? (l.mp[mp].frete==null && l.mp[mp].fixo==null ? null : (l.mp[mp].frete||0)+(l.mp[mp].fixo||0)) : (l.mp[mp].frete ?? l.mp[mp].fixo), comissao: mp==='shopee' ? l.mp[mp].com : l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), sit:situacao(l,mp), orfao:false }));
-  // anúncios sem SKU no catálogo flagship
-  if (['acoes','ativos','Inativar','todos'].includes(f.st) && !f.dep){
-    (S.res.orfaos[mp]||[]).forEach(o=>{
-      if (f.pend && S.acoes[acaoKey(o.sku,mp)]?.concluido) return;
-      if (q && !o.sku.toLowerCase().includes(q)) return;
-      rows.push({ l:null, sku:o.sku, name:'(SKU fora do catálogo Flagship)', dep:'', stock:null, pde:null, ppor:null, ativo:o.ativo, frete:null, comissao:null, pct:null, st:'Inativar', sit:situacao(null,mp), orfao:true });
-    });
+    if (!passaSt(f.st, s, l, x)) continue;
+    if (!passaPub(f.pub, x)) continue;
+    if (f.dep && l.departamento!==f.dep) continue;
+    if (f.pend && (!isAcao(s) || isDone(l,mp))) continue;
+    if (q && !(l.sku.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || l.marca.toLowerCase().includes(q) || (l.ean||'').includes(q))) continue;
+    rows.push(linha(l, x, null));
+  }
+  if (!f.dep){
+    for (const o of (S.res.orfaos[mp]||[])){
+      if (!passaSt(f.st, o.status, null, o) || !passaPub(f.pub, o)) continue;
+      if (f.pend && (o.status!=='Inativar' || S.acoes[acaoKey(o.sku,mp)]?.concluido)) continue;
+      if (q && !o.sku.toLowerCase().includes(q) && !(o.titulo||'').toLowerCase().includes(q)) continue;
+      rows.push(linha(null, o, o));
+    }
   }
   const nOut = MARKETPLACES.length - 1;
   rows.forEach(r=>{ r.ocIds = outrosCanais(r.sku, r.l, mp); r.oc = r.ocIds.map(i=>MPS[i]).join(' · '); });
@@ -937,22 +1094,24 @@ function mpRows(mp){
   return rows;
 }
 function drawMPTable(mp){
-  const f=S.f[mp]; const rows=mpRows(mp);
+  const f=S.f[mp]; const rows=mpRows(mp); const preco=temPreco(mp);
   const cols = [
     {k:'chk', t:'✓', w:'30px', c:'c', ns:true},
-    {k:'sku', t:'SKU', w:'6.5%'},
+    {k:'sku', t:'SKU', w:'6%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'8%', cls:'hl'},
-    {k:'stock', t:'Estoque', w:'5%', n:1, cls:'hm'},
-    {k:'pde', t:'Preço De (R$)', w:'6.5%', n:1, cls:'hx'},
+    {k:'dep', t:'Departamento', w:'7.5%', cls:'hxl'},
+    {k:'stock', t:'Estoque site', w:'5%', n:1, cls:'hxl'},
+    {k:'estc', t:'Estoque canal', w:'5%', n:1, cls:'hm'},
+    {k:'pde', t:'Preço De (R$)', w:'6%', n:1, cls:'hxl'},
     {k:'ppor', t:'Preço Por (R$)', w:'6.5%', n:1},
-    {k:'ativo', t:'Preço Canal (R$)', w:'6.5%', n:1},
-    {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'5.5%', n:1, cls:'hs'},
-    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'6.5%', n:1, cls:'hx'},
-    {k:'pct', t:'Comissão Estimada %', w:'7%', n:1},
-    {k:'st', t:'Ação', w:'8%'},
-    {k:'sit', t:'Situação', w:'13%'},
-    {k:'oc', t:'Ativo em outros canais', w:'8%', cls:'hx'}
+    ...(preco ? [{k:'ativo', t:'Preço Canal (R$)', w:'6.5%', n:1}] : []),
+    {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'5%', n:1, cls:'hl'},
+    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'5.5%', n:1, cls:'hl'},
+    {k:'pct', t:'Comissão Estimada %', w:'6.5%', n:1},
+    {k:'pubTxt', t:'Publicação', w:'8%'},
+    {k:'st', t:'Ação', w:'7.5%'},
+    {k:'sit', t:'Situação', w:'14%'},
+    {k:'oc', t:'Publicado em outros canais', w:'7%', cls:'hx'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
@@ -960,16 +1119,16 @@ function drawMPTable(mp){
   $('#mpTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c.ns?'':'s'} ${c.n?'n':''} ${c.c||''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
   <tbody>${pg.map(r=>{
-    const s = r.orfao ? 'Inativar' : r.l.mp[mp].status;
+    const s = r.s;
     const done = r.orfao ? !!S.acoes[acaoKey(r.sku,mp)]?.concluido : isDone(r.l,mp);
     const chk = isAcao(s) ? `<input type="checkbox" class="chk" ${done?'checked':''} onchange="toggleAcao('${mp}','${esc(r.sku)}','${s}',this.checked)" title="Marcar ação como concluída">` : '';
     const dif = r.ativo!=null && r.ppor!=null && Math.round(r.ativo*100)!==Math.round(r.ppor*100);
-    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hl" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hm">${fN(r.stock)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td><td class="n hs">${fM(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por = '+fR(r.l.mp[mp].comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="sit">${esc(r.sit)}</td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
+    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono">${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="hxl">${esc(r.dep)}</td><td class="n hxl">${fN(r.stock)}</td><td class="n hm">${fN(r.estc)}</td><td class="n hxl">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td>${preco?`<td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td>`:''}<td class="n hl">${fM(r.frete)}</td><td class="n hl" title="${r.l?fP(r.x.com,1)+' × Preço Por = '+fR(r.x.comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td>${pubHTML(r.x)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="sit">${esc(r.sit)}${errHTML(r.x.erros)}</td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
-  const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (comissão alta)', todos:'Todos os SKUs' }[f.st];
-  $('#mpListTit').textContent = f.q.trim() ? `${MPN[mp]} · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)} SKUs` : `${MPN[mp]} · ${stTxt}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
-  ['#fst','#fdep','#foc','#fpend'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
+  const stTxt = Object.fromEntries(ST_OPTS)[f.st] || f.st, pubTxt = f.pub ? Object.fromEntries(PUB_OPTS)[f.pub] : '';
+  $('#mpListTit').textContent = f.q.trim() ? `${MPN[mp]} · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)} SKUs` : `${MPN[mp]} · ${stTxt}${pubTxt?' · '+pubTxt.toLowerCase():''}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
+  ['#fst','#fpub','#fdep','#foc','#fpend'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
   $('#mpTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawMPTable(mp); });
 }
 function pagerHTML(total, page, pages, fn){
@@ -1003,12 +1162,15 @@ function renderCatalogo(){
   const inc=L.filter(l=>l.incompleto).length, semEst=hab.filter(l=>!(l.stock>0)).length, el=L.filter(l=>l.elegivel);
   const ticket = el.length ? el.reduce((a,l)=>a+l.preco_ref,0)/el.length : null;
   // por departamento
-  const dep={}; L.forEach(l=>{ const d=l.departamento||'(sem departamento)'; const x=dep[d] ||= {t:0,h:0,e:0,s:0,mk:0}; x.t++; if(l.status.toLowerCase()==='habilitado') x.h++; if(l.elegivel){ x.e++; if(MARKETPLACES.some(mp=>l.mp[mp.id].status==='Subir')) x.s++; } if(MARKETPLACES.some(mp=>l.mp[mp.id].ativo>0)) x.mk++; });
+  const dep={}; L.forEach(l=>{ const d=l.departamento||'(sem departamento)'; const x=dep[d] ||= {t:0,h:0,e:0,s:0,mk:0}; x.t++; if(l.status.toLowerCase()==='habilitado') x.h++; if(l.elegivel){ x.e++; if(MARKETPLACES.some(mp=>l.mp[mp.id].status==='Subir')) x.s++; } if(MARKETPLACES.some(mp=>l.mp[mp.id].publicado)) x.mk++; });
+  const pubAlgum = L.filter(l=>MARKETPLACES.some(m=>l.mp[m.id].publicado)).length, cadAlgum = L.filter(l=>MARKETPLACES.some(m=>l.mp[m.id].cad)).length, fora = foraDaBase().length;
   const depArr=Object.entries(dep).sort((a,b)=>b[1].e-a[1].e);
   const motivos=[...new Set(L.flatMap(l=>l.motivos))].sort();
   m.innerHTML = head('Catálogo','Elegibilidade da base Flagship pelas premissas') + `
-  <div class="grid g5" style="margin-bottom:16px">
+  <div class="grid gk" style="margin-bottom:16px">
     ${kpi('SKUs do seller', fN(L.length), fN(hab.length)+' habilitados', true)}
+    ${kpi('Publicados em algum canal', fN(pubAlgum), fN(cadAlgum)+' cadastrados em algum canal')}
+    ${kpi('Anúncios fora da base', fN(fora), 'SKU anunciado que não está no catálogo', false, fora?`style="cursor:pointer" onclick="S.f.cat.can='fora';S.f.cat.page=0;renderCatalogo();$('#catList').scrollIntoView({behavior:'smooth'})"`:'')}
     ${kpi('Elegíveis', fN(el.length), fP(el.length/(hab.length||1))+' dos habilitados')}
     ${kpi('Ticket médio elegível', fR(ticket), 'Preço Por do site')}
     ${kpi('Cadastro incompleto', fN(inc), 'Peso ou dimensões em branco')}
@@ -1016,7 +1178,7 @@ function renderCatalogo(){
   </div>
   <div class="card" style="margin-bottom:16px">
     <h3>Elegibilidade por departamento</h3><div class="sub">Clique em um departamento para filtrar a lista abaixo</div>
-    <table class="tbl"><thead><tr><th style="width:28%">Departamento</th><th class="n">SKUs</th><th class="n hx">Habilitados</th><th class="n">Elegíveis</th><th class="n">% eleg.</th><th class="n hs">Com anúncio</th><th class="n">Para subir</th></tr></thead>
+    <table class="tbl"><thead><tr><th style="width:28%">Departamento</th><th class="n">SKUs</th><th class="n hx">Habilitados</th><th class="n">Elegíveis</th><th class="n">% eleg.</th><th class="n hs">Publicados</th><th class="n">Para subir</th></tr></thead>
     <tbody>${depArr.map(([d,x])=>`<tr style="cursor:pointer" onclick="catDep('${esc(d).replace(/'/g,"\\'")}')"><td title="${esc(d)}">${esc(d)}</td><td class="n">${fN(x.t)}</td><td class="n hx">${fN(x.h)}</td><td class="n">${fN(x.e)}</td><td class="n">${fP(x.e/(x.h||1))}</td><td class="n hs">${fN(x.mk)}</td><td class="n">${fN(x.s)}</td></tr>`).join('')}</tbody></table>
   </div>
   <div class="card" id="catList">
@@ -1026,7 +1188,7 @@ function renderCatalogo(){
       <select id="cel"><option value="">Elegíveis e não elegíveis</option><option value="s" ${f.el==='s'?'selected':''}>Só elegíveis</option><option value="n" ${f.el==='n'?'selected':''}>Só não elegíveis</option><option value="i" ${f.el==='i'?'selected':''}>Cadastro incompleto</option><option value="h" ${f.el==='h'?'selected':''}>Habilitados (Flagship)</option></select>
       <select id="cmot"><option value="">Todos os motivos</option>${motivos.map(x=>`<option ${f.mot===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
       <select id="cdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
-      <select id="ccan">${[['','Todos os canais'],['algum','Ativo em algum canal'],['nenhum','Sem anúncio em nenhum canal'],...MARKETPLACES.map(m=>['mp:'+m.id,(m.id==='shopee'?'Ativo na ':'Ativo no ')+m.nome]),['todos','Ativo em todos os canais']].map(([v,t])=>`<option value="${v}" ${f.can===v?'selected':''}>${esc(t)}</option>`).join('')}</select>
+      <select id="ccan">${catCanOpts().map(([v,t])=>v.startsWith('#')?`<optgroup label="${esc(t)}">`:v==='/'?'</optgroup>':`<option value="${v}" ${f.can===v?'selected':''}>${esc(t)}</option>`).join('')}</select>
     </div>
     <div id="catTable"></div>
   </div>`;
@@ -1038,45 +1200,78 @@ function renderCatalogo(){
   drawCat();
 }
 function catDep(d){ S.f.cat.dep = d==='(sem departamento)'?'':d; S.f.cat.page=0; $('#cdep').value=S.f.cat.dep; drawCat(); $('#catTable').scrollIntoView({behavior:'smooth',block:'start'}); }
+function catCanOpts(){
+  const o=[['','Todos os canais'],['pub_algum','Publicado em algum canal'],['pub_todos','Publicado em todos os canais'],['pub_nenhum','Não publicado em nenhum canal'],['cad_nenhum','Sem cadastro em nenhum canal'],['fora','Anúncios fora da base de produtos']];
+  for (const m of MARKETPLACES){ const na = m.id==='shopee'?'na':'no'; o.push(['#'+m.id, m.nome], ['p:'+m.id,`Publicado ${na} ${m.nome}`], ['c:'+m.id,`Cadastrado e não publicado ${na} ${m.nome}`], ['n:'+m.id,`Não cadastrado ${na} ${m.nome}`], ['e:'+m.id,`Com erro ${na} ${m.nome}`], ['/','']); }
+  return o;
+}
+/* SKUs com anúncio que não estão na base de produtos (concatenados ao catálogo) */
+function foraDaBase(){
+  const map = new Map();
+  for (const m of MARKETPLACES) for (const o of (S.res.orfaos[m.id]||[])){
+    const r = map.get(o.sku) || { sku:o.sku, titulo:o.titulo||'', mp:{} };
+    r.mp[m.id] = o; if (!r.titulo && o.titulo) r.titulo = o.titulo; map.set(o.sku, r);
+  }
+  for (const r of map.values()) for (const m of MARKETPLACES) r.mp[m.id] ||= { cad:false, publicado:false };
+  return [...map.values()];
+}
 function catRows(){
   const f0=S.f.cat, q=f0.q.trim().toLowerCase();
   const f = q ? { ...f0, el:'', mot:'', dep:'', can:'' } : f0;
-  return S.res.linhas.filter(l=>{
-    if (f.el==='s' && !l.elegivel) return false;
-    if (f.el==='n' && l.elegivel) return false;
-    if (f.el==='i' && !l.incompleto) return false;
-    if (f.el==='h' && l.status.toLowerCase()!=='habilitado') return false;
-    if (f.mot && !l.motivos.includes(f.mot)) return false;
-    if (f.dep && l.departamento!==f.dep) return false;
-    if (f.can){ const at=MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).length;
-      if (f.can==='algum' && !at) return false; if (f.can==='nenhum' && at) return false;
-      if (f.can==='todos' && at!==MARKETPLACES.length) return false;
-      if (f.can.startsWith('mp:') && !(l.mp[f.can.slice(3)].ativo>0)) return false; }
-    if (q && !(l.sku.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||l.marca.toLowerCase().includes(q)||(l.ean||'').includes(q))) return false;
-    return true;
-  }).map(l=>({l, canIds:MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).map(m=>m.id), can:MARKETPLACES.filter(m=>l.mp[m.id].ativo>0).length, sku:l.sku, name:l.name, marca:l.marca, dep:l.departamento, peso:l.peso, dim:Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null, pde:l.price, ppor:l.preco_ref, stock:l.stock, mot:l.elegivel?'':l.motivos.join(' · ')}));
+  const passaCan = (mpx) => {
+    if (!f.can || f.can==='fora') return true;
+    const pubs = MARKETPLACES.filter(m=>mpx[m.id].publicado).length, cads = MARKETPLACES.filter(m=>mpx[m.id].cad).length;
+    if (f.can==='pub_algum') return pubs>0; if (f.can==='pub_todos') return pubs===MARKETPLACES.length;
+    if (f.can==='pub_nenhum') return pubs===0; if (f.can==='cad_nenhum') return cads===0;
+    const [t,id] = f.can.split(':'); const x = mpx[id]; if (!x) return true;
+    return t==='p' ? x.publicado : t==='c' ? (x.cad && !x.publicado) : t==='n' ? !x.cad : t==='e' ? !!x.erro : true;
+  };
+  const row = (l, fo) => { const mpx = l ? l.mp : fo.mp; return { l, fo, mpx,
+    pubs: MARKETPLACES.filter(m=>mpx[m.id].publicado).length, ...Object.fromEntries(MARKETPLACES.map(m=>['c_'+m.id, mpx[m.id].publicado?3:mpx[m.id].cad?2:1])),
+    sku: l?l.sku:fo.sku, name: l?l.name:(fo.titulo||'(sem título)'), marca: l?l.marca:'', dep: l?l.departamento:'', peso: l?l.peso:null, dim: l?(Math.max(l.altura||0,l.largura||0,l.profundidade||0)||null):null, pde: l?l.price:null, ppor: l?l.preco_ref:null, stock: l?l.stock:null,
+    mot: !l ? 'Fora da base de produtos (seller ' + S.P.seller_id + ')' : l.elegivel ? '' : l.motivos.join(' · ') }; };
+  const out = [];
+  if (f.can!=='fora') for (const l of S.res.linhas){
+    if (f.el==='s' && !l.elegivel) continue;
+    if (f.el==='n' && l.elegivel) continue;
+    if (f.el==='i' && !l.incompleto) continue;
+    if (f.el==='h' && l.status.toLowerCase()!=='habilitado') continue;
+    if (f.mot && !l.motivos.includes(f.mot)) continue;
+    if (f.dep && l.departamento!==f.dep) continue;
+    if (!passaCan(l.mp)) continue;
+    if (q && !(l.sku.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||l.marca.toLowerCase().includes(q)||(l.ean||'').includes(q))) continue;
+    out.push(row(l,null));
+  }
+  if (!f.el && !f.mot && !f.dep) for (const fo of foraDaBase()){
+    if (f.can!=='fora' && !passaCan(fo.mp)) continue;
+    if (q && !(fo.sku.toLowerCase().includes(q) || fo.titulo.toLowerCase().includes(q))) continue;
+    out.push(row(null,fo));
+  }
+  return out;
 }
 function drawCat(){
   const f=S.f.cat, rows=catRows();
-  const cols=[{k:'sku',t:'SKU',w:'8%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'9%',cls:'hs'},{k:'peso',t:'Peso kg',w:'6%',n:1,cls:'hx'},{k:'dim',t:'Maior dim.',w:'6.5%',n:1,cls:'hs'},{k:'pde',t:'Preço De (R$)',w:'7.5%',n:1,cls:'hx'},{k:'ppor',t:'Preço Por (R$)',w:'7.5%',n:1},{k:'stock',t:'Estoque',w:'6%',n:1,cls:'hx'},{k:'can',t:'Canais ativos',w:'11%'},{k:'mot',t:'Situação',w:'16%'}];
+  const cols=[{k:'sku',t:'SKU',w:'7%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'7.5%',cls:'hl'},{k:'peso',t:'Peso kg',w:'5%',n:1,cls:'hl'},{k:'dim',t:'Maior dim.',w:'5.5%',n:1,cls:'hl'},{k:'pde',t:'Preço De (R$)',w:'6.5%',n:1,cls:'hm'},{k:'ppor',t:'Preço Por (R$)',w:'6.5%',n:1},{k:'stock',t:'Estoque',w:'5%',n:1,cls:'hm'},
+    ...MARKETPLACES.map(m=>({k:'c_'+m.id, t:`${icoHTML(m.id,'sm')}${esc(m.sigla)}`, w:'8.5%'})), {k:'mot',t:'Situação',w:'13%'}];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per,f.page*per+per);
   $('#catTable').innerHTML = `<table class="tbl"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="s ${c.n?'n':''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
-  <tbody>${pg.map(r=>`<tr><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hs" title="${esc(r.marca)}">${esc(r.marca)}</td><td class="n hx">${r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hs">${r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hx">${fN(r.stock)}</td><td style="line-height:1.9">${chipsCanais(r.canIds)}</td><td title="${esc(r.mot)}">${r.mot?`<span class="pill">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
+  <tbody>${pg.map(r=>`<tr><td class="mono">${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="hl">${esc(r.marca)}</td><td class="n hl">${!r.l?'':r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hl">${!r.l?'':r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hm">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hm">${fN(r.stock)}</td>${MARKETPLACES.map(m=>`<td>${pubHTML(r.mpx[m.id])}</td>`).join('')}<td>${r.mot?`<span class="pill ${r.l?'':'Inativar'}">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgCat(')}`;
-  const canTxt = f.can ? ' · ' + $('#ccan').selectedOptions[0].text.toLowerCase() : '';
+  const canTxt = f.can ? ' · ' + (catCanOpts().find(o=>o[0]===f.can)||['',''])[1].toLowerCase() : '';
   $('#catListTit').textContent = f.q.trim() ? `SKUs do catálogo · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)}` : `SKUs do catálogo${canTxt} — ${fN(rows.length)}`;
   ['#cel','#cmot','#cdep','#ccan'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
-  $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawCat(); });
+  $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=k.startsWith('c_')?-1:1; } drawCat(); });
 }
 function pgCat(p){ S.f.cat.page=p; drawCat(); }
 
 /* ======================= OUTROS MARKETPLACES ======================= */
 function outrosRows(){
   const q=(S.f.out.q||'').trim().toLowerCase(); const cat=new Map(S.res.linhas.map(l=>[l.sku,l]));
-  return S.anuncios.filter(a=>a.marketplace===S.outro && (!q || a.sku.toLowerCase().includes(q) || (a.titulo||'').toLowerCase().includes(q)))
+  const pubs = S.publicacoes.map(p=>({ sku:p.sku, titulo:p.titulo, conta:p.conta, sku_marketplace:p.sku_marketplace, cod_marketplace:p.codigo, preco_de:null, preco_por:null, marketplace:p.marketplace }));
+  return [...S.anuncios, ...pubs].filter(a=>a.marketplace===S.outro && (!q || a.sku.toLowerCase().includes(q) || (a.titulo||'').toLowerCase().includes(q)))
     .map(a=>({ a, l:cat.get(a.sku)||null }));
 }
 function renderOutros(){
@@ -1244,35 +1439,36 @@ function resetPremissas(){ if(!confirm('Restaurar as premissas padrão do simula
 /* ======================= CARGAS ======================= */
 function renderCargas(){
   const m=$('#main');
-  m.innerHTML = head('Cargas','Envie a base de produtos e o export de preços do Anymarket (podem estar no mesmo arquivo)', `<button class="btn" onclick="registrarSnapshot()">Registrar fotografia agora</button>`) + `
+  m.innerHTML = head('Cargas','Envie a base de produtos e os exports de anúncios do Anymarket (um por marketplace) — pode arrastar vários arquivos de uma vez', `<button class="btn" onclick="registrarSnapshot()">Registrar fotografia agora</button>`) + `
   <div class="grid g3" style="margin-bottom:16px">
     <div class="card span2">
       <div class="drop" id="drop">
-        <div class="big">Arraste o arquivo aqui ou clique para escolher</div>
-        <div class="muted">.xlsx ou .csv · as abas são reconhecidas pelos cabeçalhos</div>
+        <div class="big">Arraste os arquivos aqui ou clique para escolher</div>
+        <div class="muted">.xlsx ou .csv · vários arquivos de uma vez · as abas são reconhecidas pelos cabeçalhos</div>
       </div>
       <div id="upStatus" style="margin-top:12px"></div>
     </div>
     <div class="card">
       <h3>O que o painel reconhece</h3>
       <div class="note" style="margin-top:8px"><b>Base de produtos</b> — aba com as colunas <span class="mono">sku, name, Inflamavel, ean, altura, largura, Profundidade, Marca, peso, Departamento, Categoria, Subcategoria, price, Special_price, status, stock_quantity, seller_id</span>. Substitui a base inteira.<br><br>
-      <b>Anymarket › Planilha › Preço › Exportar</b> — aba com <span class="mono">SKU INTERNO, MARKETPLACE, PREÇO DE, PREÇO POR…</span>. Substitui todos os anúncios ativos.</div>
+      <b>Anúncios do Anymarket</b> (um arquivo por marketplace) — aba com <span class="mono">SKU, MARKETPLACE, STATUS DA PUBLICAÇÃO, STATUS DA TRANSMISSÃO, MENSAGEM DE ERRO…</span>. Substitui os anúncios do marketplace enviado.<br><br>
+      <b>Anymarket › Planilha › Preço › Exportar</b> (opcional) — com <span class="mono">SKU INTERNO, MARKETPLACE, PREÇO POR…</span>. Traz o preço praticado no canal para checar preço diferente.</div>
     </div>
   </div>
   ${freteCardHTML()}
   <div class="card">
     <h3>Histórico de cargas</h3><div class="sub">${S.local?'No modo local o histórico não é gravado':'Últimas 40 cargas'}</div>
     <table class="tbl"><thead><tr><th style="width:20%">Data</th><th style="width:18%">Tipo</th><th>Arquivo</th><th class="n" style="width:12%">Linhas</th><th class="hs" style="width:22%">Usuário</th></tr></thead>
-    <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':'Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
+    <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':c.tipo==='publicacoes'?'Anúncios (marketplaces)':'Preços Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
   </div>`;
   $('#freteFile').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerFrete(f); };
   const d=$('#drop');
   d.onclick=()=>$('#fileInput').click();
   d.ondragover=e=>{e.preventDefault();d.classList.add('over');};
   d.ondragleave=()=>d.classList.remove('over');
-  d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); if(e.dataTransfer.files[0]) lerArquivo(e.dataTransfer.files[0]);};
+  d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); if(e.dataTransfer.files.length) lerArquivos([...e.dataTransfer.files]);};
 }
-$('#fileInput').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerArquivo(f); };
+$('#fileInput').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) lerArquivos(fs); };
 
 /* ---------- Tabelas de frete com vigência ---------- */
 function canaisComFrete(){ return [['meli','Mercado Livre'],['magalu','Magalu'], ...(S.P.canais_extra||[]).map(c=>[c.id,c.nome])]; }
@@ -1348,53 +1544,63 @@ async function salvarP(P){
   S.P=P; S.Pd=null; recalc(); return true;
 }
 
-async function lerArquivo(file){
+async function lerArquivos(files){
   const st=$('#upStatus');
-  st.innerHTML = `<div class="muted">Lendo ${esc(file.name)}…</div>`;
+  st.innerHTML = `<div class="muted">Lendo ${files.length} arquivo(s)…</div>`;
   await new Promise(r=>setTimeout(r,30));
+  let base=null, anym=[], pubs=[], nomes=[], ignorados=[];
   try{
-    const buf = await file.arrayBuffer();
-    const isCsv = /\.csv$/i.test(file.name);
-    const wb = XLSX.read(buf, { type:'array', raw:isCsv, codepage:65001 });
-    let base=null, anym=null;
-    for (const name of wb.SheetNames){
-      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, raw:true, blankrows:false });
-      for (let i=0;i<Math.min(10,aoa.length);i++){
-        const h=(aoa[i]||[]).map(x=>String(x??'').trim().toLowerCase());
-        const toObjs = () => { const hdr=aoa[i].map(x=>String(x??'').trim()); return aoa.slice(i+1).map(r=>{ const o={}; hdr.forEach((k,j)=>{ if(k) o[k]=r[j]; }); return o; }); };
-        if (!base && h.includes('sku') && h.includes('seller_id') && h.includes('price')){ base={ sheet:name, rows:toObjs() }; break; }
-        if (!anym && h.includes('sku interno') && h.includes('marketplace')){ anym={ sheet:name, rows:toObjs() }; break; }
+    for (const file of files){
+      const buf = await file.arrayBuffer();
+      const isCsv = /\.csv$/i.test(file.name);
+      const wb = XLSX.read(buf, { type:'array', raw:isCsv, codepage:65001 });
+      let achou=false;
+      for (const name of wb.SheetNames){
+        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, raw:true, blankrows:false });
+        for (let i=0;i<Math.min(10,aoa.length);i++){
+          const h=(aoa[i]||[]).map(x=>String(x??'').trim().toLowerCase());
+          const toObjs = () => { const hdr=aoa[i].map(x=>String(x??'').trim()); return aoa.slice(i+1).map(r=>{ const o={}; hdr.forEach((k,j)=>{ if(k) o[k]=r[j]; }); return o; }); };
+          if (h.includes('sku') && h.includes('seller_id') && h.includes('price')){ base={ sheet:name, arquivo:file.name, rows:toObjs() }; achou=true; break; }
+          if (h.includes('sku') && h.includes('status da publicação') && h.includes('marketplace')){ pubs.push({ arquivo:file.name, rows:toObjs().map(normalizaPublicacao).filter(a=>a.sku) }); achou=true; break; }
+          if (h.includes('sku interno') && h.includes('marketplace') && h.includes('preço por')){ anym.push(...toObjs().map(normalizaAnuncio).filter(a=>a.sku)); achou=true; break; }
+        }
       }
+      (achou ? nomes : ignorados).push(file.name);
     }
-    if (!base && !anym){ st.innerHTML = `<div class="err">Não encontrei a base de produtos nem o export do Anymarket neste arquivo. Confira os cabeçalhos.</div>`; return; }
+    if (!base && !anym.length && !pubs.length){ st.innerHTML = `<div class="err">Não reconheci nenhum arquivo. Envie a base de produtos ou os exports de anúncios do Anymarket.</div>`; return; }
     const produtos = base ? base.rows.map(r=>normalizaProduto(r,S.P)).filter(p=>p.sku) : null;
-    const anuncios = anym ? anym.rows.map(normalizaAnuncio).filter(a=>a.sku) : null;
-    const porMp = {}; (anuncios||[]).forEach(a=>porMp[a.marketplace]=(porMp[a.marketplace]||0)+1);
+    const publicacoes = pubs.flatMap(p=>p.rows);
+    const porMp = {}; publicacoes.forEach(a=>{ const k=a.marketplace; (porMp[k] ||= {n:0,at:0,err:0}); porMp[k].n++; if(a.status_publicacao==='Ativo') porMp[k].at++; if(/erro/i.test(a.status_transmissao)) porMp[k].err++; });
+    const porMpP = {}; anym.forEach(a=>porMpP[a.marketplace]=(porMpP[a.marketplace]||0)+1);
     const sellers = produtos ? produtos.filter(p=>p.seller_id===String(S.P.seller_id)).length : 0;
     st.innerHTML = `<div class="note">
-      ${produtos?`<div>✔ <b>Base de produtos</b> (aba “${esc(base.sheet)}”): ${fN(produtos.length)} SKUs, ${fN(sellers)} do seller ${esc(S.P.seller_id)}.</div>`:''}
-      ${anuncios?`<div>✔ <b>Anymarket</b> (aba “${esc(anym.sheet)}”): ${fN(anuncios.length)} anúncios — ${Object.entries(porMp).map(([k,v])=>esc(k)+' '+fN(v)).join(' · ')}.</div>`:''}
-      <div style="margin-top:6px">${S.local?'Os dados vão ficar só nesta aba (modo local).':'Os dados atuais serão substituídos no Supabase.'}</div></div>
+      ${produtos?`<div>✔ <b>Base de produtos</b> (${esc(base.arquivo)}): ${fN(produtos.length)} SKUs, ${fN(sellers)} do seller ${esc(S.P.seller_id)}.</div>`:''}
+      ${Object.entries(porMp).map(([k,v])=>`<div>✔ <b>Anúncios ${esc(k)}</b>: ${fN(v.n)} anúncios · ${fN(v.at)} ativos · ${fN(v.err)} com erro de transmissão.</div>`).join('')}
+      ${anym.length?`<div>✔ <b>Preços Anymarket</b> (opcional): ${Object.entries(porMpP).map(([k,v])=>esc(k)+' '+fN(v)).join(' · ')}.</div>`:''}
+      ${ignorados.length?`<div class="err">Não reconhecidos: ${ignorados.map(esc).join(', ')}</div>`:''}
+      <div style="margin-top:6px">${S.local?'Os dados vão ficar só nesta aba (modo local).':'Substitui no Supabase só o que veio agora: a base inteira (se enviada) e os anúncios de cada marketplace enviado.'}</div></div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" id="btnConf">Confirmar carga</button><button class="btn" onclick="$('#upStatus').innerHTML=''">Cancelar</button></div>
       <div class="progress hidden" id="prog"><div></div></div><div class="muted" id="progMsg" style="font-size:12px;margin-top:4px"></div>`;
-    $('#btnConf').onclick = () => gravarCarga(file.name, produtos, anuncios);
+    $('#btnConf').onclick = () => gravarCarga(nomes.join(', '), produtos, anym.length?anym:null, publicacoes.length?publicacoes:null);
   } catch(e){ console.error(e); st.innerHTML = `<div class="err">Erro ao ler o arquivo: ${esc(e.message||e)}</div>`; }
 }
 function prog(p, msg){ const b=$('#prog'); if(!b) return; b.classList.remove('hidden'); b.firstElementChild.style.width=(p*100).toFixed(0)+'%'; $('#progMsg').textContent=msg||''; }
 
-async function gravarCarga(arquivo, produtos, anuncios){
+async function gravarCarga(arquivo, produtos, anuncios, publicacoes){
   $('#btnConf').disabled=true;
   try{
     if (S.local){
       if (produtos) S.produtos=produtos;
       if (anuncios) S.anuncios=anuncios;
+      if (publicacoes){ const mps=new Set(publicacoes.map(p=>p.marketplace)); S.publicacoes=[...S.publicacoes.filter(p=>!mps.has(p.marketplace)), ...publicacoes]; }
       const now=new Date().toISOString();
+      if (publicacoes) S.cargas.unshift({tipo:'publicacoes',arquivo,linhas:publicacoes.length,criado_em:now});
       if (produtos) S.cargas.unshift({tipo:'base',arquivo,linhas:produtos.length,criado_em:now});
       if (anuncios) S.cargas.unshift({tipo:'anymarket',arquivo,linhas:anuncios.length,criado_em:now});
       recalc(); S.snapshots.push({criado_em:now, resumo:S.sum});
       toast('Carga aplicada (modo local)'); goTab('geral'); return;
     }
-    const steps = (produtos?produtos.length:0) + (anuncios?anuncios.length:0); let done=0; const CH=1000;
+    const steps = (produtos?produtos.length:0) + (anuncios?anuncios.length:0) + (publicacoes?publicacoes.length:0); let done=0; const CH=1000;
     const who = S.user?.email||null;
     if (produtos){
       const { data:c, error:e1 } = await S.sb.from('mc_cargas').insert({ tipo:'base', arquivo, linhas:produtos.length, usuario:who }).select().single();
@@ -1422,6 +1628,20 @@ async function gravarCarga(arquivo, produtos, anuncios){
       const { error:e2 } = await S.sb.from('mc_anuncios').delete().neq('carga_id', c.id);
       if (e2) throw e2;
     }
+    if (publicacoes){
+      const { data:c, error:e1 } = await S.sb.from('mc_cargas').insert({ tipo:'publicacoes', arquivo, linhas:publicacoes.length, usuario:who }).select().single();
+      if (e1) throw e1;
+      for (let i=0;i<publicacoes.length;i+=CH){
+        const chunk = publicacoes.slice(i,i+CH).map(a=>({...a, carga_id:c.id}));
+        const { error } = await S.sb.from('mc_publicacoes').insert(chunk);
+        if (error) throw error;
+        done += chunk.length; prog(done/steps, `Gravando anúncios dos marketplaces… ${fN(i+chunk.length)} de ${fN(publicacoes.length)}`);
+      }
+      for (const mkt of new Set(publicacoes.map(p=>p.marketplace))){
+        const { error:e2 } = await S.sb.from('mc_publicacoes').delete().eq('marketplace', mkt).neq('carga_id', c.id);
+        if (e2) throw e2;
+      }
+    }
     prog(1,'Recalculando…');
     await loadAll();
     await registrarSnapshot(true);
@@ -1442,11 +1662,16 @@ function baixarXLSX(nome, rows, sheet='Dados'){
   XLSX.writeFile(wb, nome + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 function exportMP(mp){
-  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Situação':r.sit, 'Ativo em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
-  baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp]);
+  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque site':r.stock, 'Estoque canal':r.estc, 'Peso (kg)':r.l?.peso??null,
+    'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000,
+    'Publicação':r.pubTxt, 'Anúncios no canal':r.x.n||0, 'Código no marketplace':(r.x.codigos||[]).join(', '), 'Erro de transmissão':r.x.erro?'Sim':'Não', 'Mensagem de erro':(r.x.erros||[]).join(' | '),
+    'Ação':r.st, 'Situação':r.sit, 'Publicado em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
+  baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp].slice(0,31));
 }
 function exportCat(){
-  baixarXLSX('MATCON_Catalogo', catRows().map(r=>({ 'SKU':r.sku,'Produto':r.name,'EAN':r.l.ean,'Marca':r.marca,'Departamento':r.dep,'Categoria':r.l.categoria,'Subcategoria':r.l.subcategoria,'Peso (kg)':r.peso,'Altura':r.l.altura,'Largura':r.l.largura,'Profundidade':r.l.profundidade,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Canais ativos':r.canIds.map(i=>MPN[i]).join(', '),'Status':r.l.status,'Elegível':r.l.elegivel?'Sim':'Não','Motivos':r.mot })), 'Catálogo');
+  baixarXLSX('MATCON_Catalogo', catRows().map(r=>{ const l=r.l; const o={ 'SKU':r.sku,'Produto':r.name,'EAN':l?.ean||'','Marca':r.marca,'Departamento':r.dep,'Categoria':l?.categoria||'','Subcategoria':l?.subcategoria||'','Peso (kg)':r.peso,'Altura':l?.altura??null,'Largura':l?.largura??null,'Profundidade':l?.profundidade??null,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Status no site':l?.status||'Fora da base' };
+    for (const m of MARKETPLACES){ const x=r.mpx[m.id]; o[m.nome+' - cadastrado']=x.cad?'Sim':'Não'; o[m.nome+' - publicado']=x.publicado?'Sim':'Não'; o[m.nome+' - status']=x.cad?(x.pub||''):'Não cadastrado'; o[m.nome+' - erro']=x.erro?(x.erros||[]).join(' | ')||'Sim':''; o[m.nome+' - ação']=x.status?STATUS_LABEL[x.status]:''; }
+    o['Elegível']=l?(l.elegivel?'Sim':'Não'):''; o['Situação']=r.mot||'Elegível'; return o; }), 'Catálogo');
 }
 function exportResumo(){
   const s=S.sum;
