@@ -37,7 +37,7 @@ nav button:hover{color:var(--ink)}
 nav button.on{color:var(--ink);border-bottom-color:var(--brand)}
 .banner{background:#fff8e1;border-bottom:1px solid #f1e2b0;color:#6b5300;padding:8px 24px;font-size:13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 
-main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
+main{padding:20px 24px 48px;max-width:1840px;margin:0 auto}
 .page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
 .page-h h1{font-size:22px;font-weight:800}
 .page-h p{margin:4px 0 0;color:var(--ink-2);font-size:13px}
@@ -1095,23 +1095,24 @@ function mpRows(mp){
 }
 function drawMPTable(mp){
   const f=S.f[mp]; const rows=mpRows(mp); const preco=temPreco(mp);
+  const wide = window.innerWidth > 1750, narrow = window.innerWidth <= 1300;
   const cols = [
     {k:'chk', t:'✓', w:'30px', c:'c', ns:true},
-    {k:'sku', t:'SKU', w:'6%'},
+    {k:'sku', t:'SKU', w:'5%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'7.5%', cls:'hxl'},
-    {k:'stock', t:'Estoque site', w:'5%', n:1, cls:'hxl'},
-    {k:'estc', t:'Estoque canal', w:'5%', n:1, cls:'hm'},
-    {k:'pde', t:'Preço De (R$)', w:'6%', n:1, cls:'hxl'},
-    {k:'ppor', t:'Preço Por (R$)', w:'6.5%', n:1},
-    ...(preco ? [{k:'ativo', t:'Preço Canal (R$)', w:'6.5%', n:1}] : []),
-    {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'5%', n:1, cls:'hl'},
-    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'5.5%', n:1, cls:'hl'},
-    {k:'pct', t:'Comissão Estimada %', w:'6.5%', n:1},
-    {k:'pubTxt', t:'Publicação', w:'8%'},
-    {k:'st', t:'Ação', w:'7.5%'},
-    {k:'sit', t:'Situação', w:'14%'},
-    {k:'oc', t:'Publicado em outros canais', w:'7%', cls:'hx'}
+    {k:'dep', t:'Departamento', w:'6.5%', cls:'hxl'},
+    {k:'stock', t:'Estoque site', w:'4%', n:1, cls:'hxl'},
+    {k:'estc', t:'Estoque canal', w:wide?'4%':'5.5%', n:1, cls:'hm'},
+    {k:'pde', t:'Preço De (R$)', w:'5.5%', n:1, cls:'hxl'},
+    {k:'ppor', t:'Preço Por (R$)', w:narrow?'7.5%':'6%', n:1},
+    ...(preco ? [{k:'ativo', t:'Preço Canal (R$)', w:narrow?'7.5%':'6%', n:1}] : []),
+    {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'4.5%', n:1, cls:'hl'},
+    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'5%', n:1, cls:'hl'},
+    {k:'pct', t:'Comissão Estimada %', w:wide?'5.5%':narrow?'8%':'6.5%', n:1},
+    {k:'pubTxt', t:'Publicação', w:'7%'},
+    {k:'st', t:'Ação', w:'6.5%'},
+    {k:'sit', t:'Situação', w:'12%'},
+    {k:'oc', t:'Publicado em outros canais', w:wide?'5.5%':narrow?'8.5%':'7%', cls:'hx'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
@@ -1252,7 +1253,7 @@ function catRows(){
 function drawCat(){
   const f=S.f.cat, rows=catRows();
   const cols=[{k:'sku',t:'SKU',w:'7%'},{k:'name',t:'Produto',w:'auto'},{k:'marca',t:'Marca',w:'7.5%',cls:'hl'},{k:'peso',t:'Peso kg',w:'5%',n:1,cls:'hl'},{k:'dim',t:'Maior dim.',w:'5.5%',n:1,cls:'hl'},{k:'pde',t:'Preço De (R$)',w:'6.5%',n:1,cls:'hm'},{k:'ppor',t:'Preço Por (R$)',w:'6.5%',n:1},{k:'stock',t:'Estoque',w:'5%',n:1,cls:'hm'},
-    ...MARKETPLACES.map(m=>({k:'c_'+m.id, t:`${icoHTML(m.id,'sm')}${esc(m.sigla)}`, w:'8.5%'})), {k:'mot',t:'Situação',w:'13%'}];
+    ...MARKETPLACES.map(m=>({k:'c_'+m.id, t:`${icoHTML(m.id,'sm')}${esc(m.sigla)}`, w:Math.min(8.5, 30/MARKETPLACES.length).toFixed(1)+'%'})), {k:'mot',t:'Situação',w:'12%'}];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
   const pg=rows.slice(f.page*per,f.page*per+per);
@@ -1694,6 +1695,7 @@ function saveConfig(){
   localStorage.setItem('matcon_sb', JSON.stringify({url,key})); location.reload();
 }
 
+let _rz; window.addEventListener('resize', () => { clearTimeout(_rz); _rz = setTimeout(() => { if (MPN[S.tab] && $('#mpTable')) drawMPTable(S.tab); else if (S.tab==='catalogo' && $('#catTable')) drawCat(); }, 200); });
 boot();
 </script>
 </body>
