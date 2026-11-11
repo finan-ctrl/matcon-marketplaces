@@ -82,7 +82,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .tbl th.s:hover{color:var(--ink)}
 .tbl td{padding:7px 6px;border-bottom:1px solid var(--line-2);white-space:normal;overflow-wrap:anywhere;line-height:1.35;vertical-align:middle}
 .tbl td.n{overflow-wrap:normal;white-space:nowrap}
-@media(max-width:1300px){.tbl td,.tbl th{padding-left:5px;padding-right:5px}}
+@media(max-width:1300px){.tbl td,.tbl th{padding-left:4px;padding-right:4px}.tbl td.n{font-size:12px}.tbl th{font-size:10px}}
 .tbl tr:hover td{background:#fafaf7}
 .tbl .n{text-align:right;font-variant-numeric:tabular-nums}
 .tbl .c{text-align:center}
@@ -90,6 +90,8 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .tbl td.wrap{white-space:normal}
 .tbl.hw th{white-space:normal;line-height:1.25;vertical-align:bottom}
 @media(max-width:1200px){.tbl .hm{display:none}}
+@media(max-width:1500px){.tbl .hl{display:none}}
+.sit{font-size:12px;color:var(--ink-2);line-height:1.3}
 @media(max-width:900px){.tbl .hs{display:none}}
 @media(max-width:640px){.tbl .hx{display:none}}
 .lnk{color:inherit;text-decoration:underline dotted #b5b4ad;text-underline-offset:3px;cursor:pointer;border-radius:4px;padding:1px 3px;margin:-1px -3px}
@@ -115,7 +117,7 @@ main{padding:20px 24px 48px;max-width:1600px;margin:0 auto}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .filters select:disabled{opacity:.45;cursor:not-allowed}
 .filters input[type=search],.filters select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;min-width:0}
-.filters input[type=search]{flex:1 1 220px}
+.filters input[type=search]{flex:1 1 200px;min-width:190px}
 .filters select{flex:0 0 auto;max-width:100%}
 .filters label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);white-space:nowrap}
 .pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--ink-2);gap:8px;flex-wrap:wrap}
@@ -838,7 +840,7 @@ function renderMP(mp){
   <div class="card" id="mpList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="mpListTit"></h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportMP('${mp}')">Exportar para Excel</button></div>
     <div class="filters">
-      <input type="search" id="fq" placeholder="Buscar SKU, produto, marca ou EAN" value="${esc(f.q)}">
+      <input type="search" id="fq" placeholder="Buscar SKU, nome ou EAN" value="${esc(f.q)}">
       <select id="fst">${[['acoes','Todas as ações'],['ativos','Ativos'],['Inativar','Inativar'],['Dif','Preço diferente'],['Igual','Preço igual'],['Subir','Subir'],['final','Final (igual + subir)'],['inviavel','Inviável (comissão alta)'],['todos','Todos os SKUs']].map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
       <select id="fdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
       <select id="foc">${ocOptions(mp).map(([v,t])=>`<option value="${v}" ${f.oc===v?'selected':''}>${t}</option>`).join('')}</select>
@@ -872,6 +874,21 @@ function chipCanal(id){ const m=MARKETPLACES.find(x=>x.id===id); if(!m) return '
 function chipsCanais(ids){ return ids.map(chipCanal).join('') || '<span class="muted">—</span>'; }
 function canalCom(mp){ return mp in DEFAULT_PREMISSAS ? S.P[mp].com : (canalExtra(S.P,mp)?.com ?? 0); }
 function isExtra(mp){ return !!MARKETPLACES.find(m=>m.id===mp)?.extra; }
+/* Motivo por trás da ação de cada SKU no canal */
+function situacao(l, mp){
+  if (!l) return 'SKU anunciado que não está no catálogo Flagship (seller ' + S.P.seller_id + ')';
+  const x = l.mp[mp], s = x.status, lim = S.P.comissao_max;
+  if (!l.elegivel) return 'Não elegível: ' + l.motivos.map(m => {
+    if (m.startsWith('Dimensão')){ const d=[['altura',l.altura],['largura',l.largura],['profundidade',l.profundidade]].filter(x=>(x[1]||0)>=S.P.dim_max).map(x=>x[0]+' '+fN(x[1],x[1]%1?1:0)+' cm'); return m+' ('+d.join(', ')+')'; }
+    if (m.startsWith('Peso')) return m+' ('+fN(l.peso,1)+' kg)';
+    return m; }).join(' · ');
+  if (x.pct == null) return 'Sem frete cadastrado para ' + fN(l.peso,3) + ' kg';
+  if (s==='Inativar' || !s) return 'Comissão estimada ' + fP(x.pct) + ' acima do limite de ' + fP(lim,0);
+  if (s==='Dif'){ const d = x.ativo - l.preco_ref; return 'Canal ' + (d>0?'acima':'abaixo') + ' do site em ' + fR(Math.abs(d)) + ' (' + (d>0?'+':'−') + fN(Math.abs(d)/l.preco_ref*100,1) + '%)'; }
+  if (s==='Igual') return 'Preço igual ao site · comissão ' + fP(x.pct);
+  if (s==='Subir') return 'Elegível e fora do canal · comissão ' + fP(x.pct);
+  return '';
+}
 function setMPf(mp,k,v){ const f=S.f[mp]; f[k] = (k==='st' && f.st===v) ? 'acoes' : v; f.page=0; renderMP(mp); }
 function drawMPCharts(mp){
   // histograma
@@ -905,13 +922,13 @@ function mpRows(mp){
     if (f.pend && (!isAcao(s) || isDone(l,mp))) return false;
     if (q && !(l.sku.toLowerCase().includes(q) || l.name.toLowerCase().includes(q) || l.marca.toLowerCase().includes(q) || (l.ean||'').includes(q))) return false;
     return true;
-  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete: isExtra(mp) ? (l.mp[mp].frete==null && l.mp[mp].fixo==null ? null : (l.mp[mp].frete||0)+(l.mp[mp].fixo||0)) : (l.mp[mp].frete ?? l.mp[mp].fixo), comissao: mp==='shopee' ? l.mp[mp].com : l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), orfao:false }));
+  }).map(l=>({ l, sku:l.sku, name:l.name, dep:l.departamento, stock:l.stock, pde:l.price, ppor:l.preco_ref, ativo:l.mp[mp].ativo, frete: isExtra(mp) ? (l.mp[mp].frete==null && l.mp[mp].fixo==null ? null : (l.mp[mp].frete||0)+(l.mp[mp].fixo||0)) : (l.mp[mp].frete ?? l.mp[mp].fixo), comissao: mp==='shopee' ? l.mp[mp].com : l.mp[mp].comissao, pct:l.mp[mp].pct, st:statusLabel(l,mp), sit:situacao(l,mp), orfao:false }));
   // anúncios sem SKU no catálogo flagship
   if (['acoes','ativos','Inativar','todos'].includes(f.st) && !f.dep){
     (S.res.orfaos[mp]||[]).forEach(o=>{
       if (f.pend && S.acoes[acaoKey(o.sku,mp)]?.concluido) return;
       if (q && !o.sku.toLowerCase().includes(q)) return;
-      rows.push({ l:null, sku:o.sku, name:'(SKU fora do catálogo Flagship)', dep:'', stock:null, pde:null, ppor:null, ativo:o.ativo, frete:null, comissao:null, pct:null, st:'Inativar', orfao:true });
+      rows.push({ l:null, sku:o.sku, name:'(SKU fora do catálogo Flagship)', dep:'', stock:null, pde:null, ppor:null, ativo:o.ativo, frete:null, comissao:null, pct:null, st:'Inativar', sit:situacao(null,mp), orfao:true });
     });
   }
   const nOut = MARKETPLACES.length - 1;
@@ -925,16 +942,17 @@ function drawMPTable(mp){
     {k:'chk', t:'✓', w:'30px', c:'c', ns:true},
     {k:'sku', t:'SKU', w:'6.5%'},
     {k:'name', t:'Produto', w:'auto'},
-    {k:'dep', t:'Departamento', w:'8.5%', cls:'hm'},
+    {k:'dep', t:'Departamento', w:'8%', cls:'hl'},
     {k:'stock', t:'Estoque', w:'5%', n:1, cls:'hm'},
-    {k:'pde', t:'Preço De (R$)', w:'7%', n:1, cls:'hx'},
-    {k:'ppor', t:'Preço Por (R$)', w:'7%', n:1},
-    {k:'ativo', t:'Preço Canal (R$)', w:'7%', n:1},
+    {k:'pde', t:'Preço De (R$)', w:'6.5%', n:1, cls:'hx'},
+    {k:'ppor', t:'Preço Por (R$)', w:'6.5%', n:1},
+    {k:'ativo', t:'Preço Canal (R$)', w:'6.5%', n:1},
     {k:'frete', t:mp==='shopee'?'Fixo (R$)':isExtra(mp)?'Frete + fixo (R$)':'Frete (R$)', w:'5.5%', n:1, cls:'hs'},
-    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'7%', n:1, cls:'hx'},
-    {k:'pct', t:'Comissão Estimada %', w:'7.5%', n:1},
-    {k:'st', t:'Ação', w:'8.5%'},
-    {k:'oc', t:'Ativo em outros canais', w:'9%', cls:'hx'}
+    {k:'comissao', t: mp==='shopee' ? 'Comissão % (faixa)' : 'Comissão '+fP(canalCom(mp),1)+' (R$)', w:'6.5%', n:1, cls:'hx'},
+    {k:'pct', t:'Comissão Estimada %', w:'7%', n:1},
+    {k:'st', t:'Ação', w:'8%'},
+    {k:'sit', t:'Situação', w:'13%'},
+    {k:'oc', t:'Ativo em outros canais', w:'8%', cls:'hx'}
   ];
   rows.sort((a,b)=>{ const x=a[f.sort], y=b[f.sort]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y,'pt-BR') : x-y) * f.dir; });
   const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
@@ -946,7 +964,7 @@ function drawMPTable(mp){
     const done = r.orfao ? !!S.acoes[acaoKey(r.sku,mp)]?.concluido : isDone(r.l,mp);
     const chk = isAcao(s) ? `<input type="checkbox" class="chk" ${done?'checked':''} onchange="toggleAcao('${mp}','${esc(r.sku)}','${s}',this.checked)" title="Marcar ação como concluída">` : '';
     const dif = r.ativo!=null && r.ppor!=null && Math.round(r.ativo*100)!==Math.round(r.ppor*100);
-    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hm" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hm">${fN(r.stock)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td><td class="n hs">${fM(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por = '+fR(r.l.mp[mp].comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
+    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono" title="${esc(r.sku)}">${esc(r.sku)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td class="hl" title="${esc(r.dep)}">${esc(r.dep)}</td><td class="n hm">${fN(r.stock)}</td><td class="n hx">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td><td class="n hs">${fM(r.frete)}</td><td class="n hx" title="${r.l?fP(r.l.mp[mp].com,1)+' × Preço Por = '+fR(r.l.mp[mp].comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="sit">${esc(r.sit)}</td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
   const stTxt = { acoes:'Todas as ações', ativos:'Ativos', Inativar:'Inativar', Dif:'Preço diferente', Igual:'Preço igual', Subir:'Subir', final:'Final (igual + subir)', inviavel:'Inviável (comissão alta)', todos:'Todos os SKUs' }[f.st];
@@ -1004,7 +1022,7 @@ function renderCatalogo(){
   <div class="card" id="catList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="catListTit">SKUs</h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportCat()">Exportar para Excel</button></div>
     <div class="filters">
-      <input type="search" id="cq" placeholder="Buscar SKU, produto, marca ou EAN" value="${esc(f.q)}">
+      <input type="search" id="cq" placeholder="Buscar SKU, nome ou EAN" value="${esc(f.q)}">
       <select id="cel"><option value="">Elegíveis e não elegíveis</option><option value="s" ${f.el==='s'?'selected':''}>Só elegíveis</option><option value="n" ${f.el==='n'?'selected':''}>Só não elegíveis</option><option value="i" ${f.el==='i'?'selected':''}>Cadastro incompleto</option><option value="h" ${f.el==='h'?'selected':''}>Habilitados (Flagship)</option></select>
       <select id="cmot"><option value="">Todos os motivos</option>${motivos.map(x=>`<option ${f.mot===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
       <select id="cdep"><option value="">Todos os departamentos</option>${S.deps.map(d=>`<option ${f.dep===d?'selected':''}>${esc(d)}</option>`).join('')}</select>
@@ -1424,7 +1442,7 @@ function baixarXLSX(nome, rows, sheet='Dados'){
   XLSX.writeFile(wb, nome + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 function exportMP(mp){
-  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Ativo em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
+  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque':r.stock, 'Peso (kg)':r.l?.peso??null, 'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000, 'Ação':r.st, 'Situação':r.sit, 'Ativo em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
   baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp]);
 }
 function exportCat(){
