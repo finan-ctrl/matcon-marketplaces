@@ -1659,20 +1659,21 @@ async function registrarSnapshot(silent){
 
 /* ======================= EXPORTS ======================= */
 function baixarXLSX(nome, rows, sheet='Dados'){
-  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,sheet);
+  const ws=XLSX.utils.json_to_sheet(rows);
+  if (rows.length){ ws['!cols'] = Object.keys(rows[0]).map(k=>({ wch: Math.min(60, Math.max(k.length+2, ...rows.slice(0,200).map(r=>String(r[k]??'').length))) })); ws['!autofilter'] = { ref: ws['!ref'] }; } const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,sheet);
   XLSX.writeFile(wb, nome + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 function exportMP(mp){
-  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque site':r.stock, 'Estoque canal':r.estc, 'Peso (kg)':r.l?.peso??null,
+  const rows=mpRows(mp).map(r=>({ 'SKU':r.sku, 'Produto':r.name, 'Ação':r.st, 'Situação':r.sit, 'Publicação':r.pubTxt, 'EAN':r.l?.ean||'', 'Marca':r.l?.marca||'', 'Departamento':r.dep, 'Estoque site':r.stock, 'Estoque canal':r.estc, 'Peso (kg)':r.l?.peso??null,
     'Preço De':r.pde, 'Preço Por':r.ppor, 'Preço Canal':r.ativo, [mp==='shopee'?'Fixo':isExtra(mp)?'Frete + fixo':'Frete']:r.frete, 'Comissão %':r.l?.mp[mp].com??null, 'Comissão (R$)':r.l?.mp[mp].comissao??null, 'Comissão Estimada %':r.pct==null?null:Math.round(r.pct*10000)/10000,
-    'Publicação':r.pubTxt, 'Anúncios no canal':r.x.n||0, 'Código no marketplace':(r.x.codigos||[]).join(', '), 'Erro de transmissão':r.x.erro?'Sim':'Não', 'Mensagem de erro':(r.x.erros||[]).join(' | '),
-    'Ação':r.st, 'Situação':r.sit, 'Publicado em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
+    'Anúncios no canal':r.x.n||0, 'Código no marketplace':(r.x.codigos||[]).join(', '), 'Erro de transmissão':r.x.erro?'Sim':'Não', 'Mensagem de erro':(r.x.erros||[]).join(' | '),
+    'Publicado em outros canais':r.ocIds.map(i=>MPN[i]).join(', '), 'Concluída': (r.orfao ? S.acoes[acaoKey(r.sku,mp)]?.concluido : r.l && isDone(r.l,mp)) ? 'Sim' : 'Não' }));
   baixarXLSX('MATCON_'+MPN[mp].replace(/\s/g,''), rows, MPN[mp].slice(0,31));
 }
 function exportCat(){
   baixarXLSX('MATCON_Catalogo', catRows().map(r=>{ const l=r.l; const o={ 'SKU':r.sku,'Produto':r.name,'EAN':l?.ean||'','Marca':r.marca,'Departamento':r.dep,'Categoria':l?.categoria||'','Subcategoria':l?.subcategoria||'','Peso (kg)':r.peso,'Altura':l?.altura??null,'Largura':l?.largura??null,'Profundidade':l?.profundidade??null,'Preço De':r.pde,'Preço Por':r.ppor,'Estoque':r.stock,'Status no site':l?.status||'Fora da base' };
     for (const m of MARKETPLACES){ const x=r.mpx[m.id]; o[m.nome+' - cadastrado']=x.cad?'Sim':'Não'; o[m.nome+' - publicado']=x.publicado?'Sim':'Não'; o[m.nome+' - status']=x.cad?(x.pub||''):'Não cadastrado'; o[m.nome+' - erro']=x.erro?(x.erros||[]).join(' | ')||'Sim':''; o[m.nome+' - ação']=x.status?STATUS_LABEL[x.status]:''; }
-    o['Elegível']=l?(l.elegivel?'Sim':'Não'):''; o['Situação']=r.mot||'Elegível'; return o; }), 'Catálogo');
+    o['Elegível']=l?(l.elegivel?'Sim':'Não'):''; const {SKU,Produto,...resto}=o; return { SKU, Produto, 'Situação': r.mot||'Elegível', ...resto }; }), 'Catálogo');
 }
 function exportResumo(){
   const s=S.sum;
