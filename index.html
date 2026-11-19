@@ -168,7 +168,12 @@ main{padding:20px 24px 48px;max-width:1840px;margin:0 auto}
 
 /* modal / login / toast */
 .overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
-.modal{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:460px;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.modal{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:460px;box-shadow:0 20px 50px rgba(0,0,0,.2);max-height:calc(100vh - 32px);overflow-y:auto}
+.modal.wide{max-width:780px}
+.dt{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}.dt td{padding:6px 8px;border-bottom:1px solid var(--line-2);vertical-align:top}.dt td.v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}.dt td.o{color:var(--ink-3);font-size:12px}.dt tr.tot td{border-top:2px solid var(--ink);font-weight:700}
+.mh{font:700 12px Inter;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin:12px 0 2px}
+.kitrow{cursor:pointer}.kitrow:hover td{background:#fafaf7}.kitsub td{background:#fbfbf8}
+.mx td,.mx th{text-align:center}.mx td:first-child,.mx th:first-child{text-align:left}
 .modal h2{font-size:18px;margin-bottom:6px}
 .modal p{color:var(--ink-2);font-size:13px;margin:0 0 16px}
 .modal .fld{margin-bottom:12px}
@@ -622,7 +627,88 @@ function resumo(res){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+/* ---------- detalhamento do custo (para o clique no SKU) ---------- */
+function detalheCusto(id, preco, peso, P){
+  const L = []; const fR = v => 'R$ ' + (Math.round(v*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pc = v => (v*100).toLocaleString('pt-BR',{maximumFractionDigits:2}) + '%';
+  const kg = v => Number(v).toLocaleString('pt-BR',{maximumFractionDigits:3});
+  let com=0, fixo=0, frete=0, ok=true;
+  if (id==='shopee'){
+    const f = P.shopee.faixas.slice().sort((a,b)=>a.min-b.min); let t=f[0]; for (const x of f) if (preco >= x.min) t = x;
+    com=t.com; fixo=t.fixo;
+    L.push({ r:'Taxa de comissão', v:fR(com*preco), o: pc(com) + ' da faixa a partir de ' + fR(t.min) });
+    L.push({ r:'Custo fixo por venda', v:fR(fixo), o:'mesma faixa de preço' });
+  } else if (id==='meli'){
+    const M = { ...P.meli, ...tabelaVigente(P.meli) }; com=M.com;
+    L.push({ r:'Taxa de comissão', v:fR(com*preco), o: pc(com) + ' (Clássico)' });
+    const lim = M.faixas_peso; const lin = lim.findIndex(l => (peso||0) <= l);
+    let col = 0; for (const x of (M.faixas_preco||P.meli.faixas_preco)) if (preco > x) col++;
+    const base = lin<0 ? null : (M.tabela[lin]||[])[col];
+    if (base==null){ ok=false; L.push({ r:'Frete', v:'—', o:'peso acima da tabela' }); }
+    else { frete = Math.round(base*M.multiplicador*100)/100;
+      const pAnt = lin>0 ? lim[lin-1] : 0, cols = M.colunas || P.meli.colunas;
+      L.push({ r:'Frete', v:fR(frete), o:`tabela ${M.vigencia ? 'vigente desde '+M.vigencia.split('-').reverse().join('/') : 'padrão'} · peso ${pAnt>0?'de '+kg(pAnt)+' ':''}até ${lim[lin]>=1e8?'acima':kg(lim[lin])} kg × preço ${cols[col]||''} = ${fR(base)}${M.multiplicador!==1?' × '+M.multiplicador+' (reputação)':''}` }); }
+  } else if (id==='magalu'){
+    const M = { ...P.magalu, ...tabelaVigente(P.magalu) }; com=M.com;
+    L.push({ r:'Taxa de comissão', v:fR(com*preco), o: pc(com) });
+    const i = M.faixas_peso.findIndex(l => (peso||0) <= l);
+    if (i<0){ ok=false; L.push({ r:'Frete', v:'—', o:'peso acima da tabela' }); }
+    else { frete=M.valores[i]; L.push({ r:'Frete', v:fR(frete), o:`peso ${i>0?'de '+kg(M.faixas_peso[i-1])+' ':''}até ${M.faixas_peso[i]>=1e8?'acima':kg(M.faixas_peso[i])} kg${M.vigencia?' · tabela desde '+M.vigencia.split('-').reverse().join('/'):''}` }); }
+  } else {
+    const c0 = canalExtra(P,id)||{}; const c = { ...c0, ...tabelaVigente(c0) };
+    com = Number(c.com)||0; fixo = Number(c.fixo)||0;
+    L.push({ r:'Taxa de comissão', v:fR(com*preco), o: pc(com) });
+    if (fixo) L.push({ r:'Custo fixo por venda', v:fR(fixo), o:'' });
+    const fp=(c.faixas_peso||[]).map(Number);
+    if (fp.length){ const i=fp.findIndex(l=>(peso||0)<=l); if(i<0){ ok=false; L.push({ r:'Frete', v:'—', o:'peso acima da tabela' }); } else { frete=Number((c.valores||[])[i])||0; L.push({ r:'Frete', v:fR(frete), o:`peso até ${kg(fp[i])} kg` }); } }
+  }
+  const total = com*preco + fixo + frete;
+  return { linhas:L, total, pct: ok && preco>0 ? total/preco : null, com, fixo, frete };
+}
+
+/* ---------- kits e composições ---------- */
+function normalizaKit(row){
+  const g = k => { for (const key of Object.keys(row)) if (key.trim().toLowerCase() === k) return row[key]; return null; };
+  return { kit: txt(g('kit')), sku: txt(g('sku')), descricao: decodeHtml(txt(g('descrição') ?? g('descricao'))), quantidade: num(g('quantidade')) || 1, preco_sugerido: num(g('preço sugerido') ?? g('preco sugerido')), peso: num(g('peso')) };
+}
+function calculaKits(kitsRows, produtos, P){
+  const base = new Map(produtos.map(p => [p.sku, p]));
+  const grupos = new Map();
+  for (const r of kitsRows||[]){ if (!r.kit || !r.sku) continue; (grupos.get(r.kit) || grupos.set(r.kit, []).get(r.kit)).push(r); }
+  const out = [];
+  for (const [nome, itens] of grupos){
+    const preco = itens.find(i=>i.preco_sugerido)?.preco_sugerido || 0;
+    let peso = 0, avulso = 0, disp = Infinity, faltam = [], problemas = [];
+    const comps = itens.map(i => {
+      const p = base.get(i.sku);
+      const pesoU = p && p.peso != null ? p.peso : (i.peso ?? 0);
+      peso += (pesoU||0) * i.quantidade;
+      const pv = p ? precoRef(p) : null; if (pv) avulso += pv * i.quantidade;
+      const est = p ? (p.stock||0) : 0; disp = Math.min(disp, Math.floor(est / i.quantidade));
+      if (!p) faltam.push(i.sku);
+      else {
+        if (String(p.status).toLowerCase() !== 'habilitado') problemas.push(i.sku + ' desabilitado');
+        if (String(p.inflamavel).toLowerCase() === 'sim') problemas.push(i.sku + ' inflamável');
+        if ([p.altura,p.largura,p.profundidade].some(d=>(d||0) >= P.dim_max)) problemas.push(i.sku + ' com dimensão ≥ ' + P.dim_max + ' cm');
+      }
+      return { ...i, produto: p || null, peso_unit: pesoU, preco_unit: pv, estoque: est, disponiveis: Math.floor(est / i.quantidade) };
+    });
+    if (faltam.length) problemas.unshift(faltam.length + ' componente(s) fora da base: ' + faltam.join(', '));
+    if (peso >= P.peso_max) problemas.push('peso do kit ' + (Math.round(peso*100)/100) + ' kg ≥ ' + P.peso_max + ' kg');
+    if (!(preco > 0)) problemas.push('sem preço sugerido');
+    const elegivel = problemas.length === 0;
+    const mp = {};
+    for (const m of MARKETPLACES){
+      const d = preco > 0 ? detalheCusto(m.id, preco, peso, P) : null;
+      mp[m.id] = { ...(d||{}), viavel: !!(elegivel && d && d.pct != null && d.pct <= P.comissao_max) };
+    }
+    out.push({ kit:nome, itens:comps, n:comps.length, unidades:comps.reduce((a,c)=>a+c.quantidade,0), preco, peso:Math.round(peso*1000)/1000, avulso:Math.round(avulso*100)/100,
+      desconto: avulso>0 ? 1 - preco/avulso : null, disponiveis: disp===Infinity?0:disp, elegivel, problemas, mp });
+  }
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { detalheCusto, normalizaKit, calculaKits, normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -631,7 +717,7 @@ if (typeof module !== 'undefined') module.exports = { normalizaPublicacao, ACOES
 const S = {
   sb:null, user:null, local:true,
   P: structuredClone(DEFAULT_PREMISSAS),
-  produtos:[], anuncios:[], publicacoes:[], acoes:{}, snapshots:[], cargas:[],
+  produtos:[], anuncios:[], publicacoes:[], kits:[], kitsCalc:[], usuarios:[], perfis:[], acoes:{}, snapshots:[], cargas:[],
   res:null, sum:null, tab:'geral',
   f:{}, charts:{}
 };
@@ -687,6 +773,10 @@ function showApp(){
   $('#whoBox').textContent = S.local ? 'Sem conexão' : (S.user?.email || '');
   recalc(); render();
 }
+function aplicaPerfilNaTela(){
+  $('#whoBox').textContent = S.local ? 'Sem conexão' : (S.user?.email || '') + (S.perm?.perfil ? ' · ' + S.perm.perfil : '');
+  if (S.perm?.sem) semAcesso();
+}
 async function doLogin(){
   const email=$('#lgEmail').value.trim(), password=$('#lgPass').value;
   $('#lgErr').textContent=''; $('#lgBtn').disabled=true;
@@ -729,13 +819,21 @@ async function loadAll(){
       fetchAll('mc_publicacoes','id').catch(e=>{ console.warn(e); toast('Tabela mc_publicacoes não encontrada: rode o supabase_atualizacao_v2.sql', 8000); return []; })
     ]);
     S.publicacoes = publicacoes;
+    const [kits, usuarios, perfis] = await Promise.all([
+      fetchAll('mc_kits','id').catch(e=>{ console.warn(e); S.semV3=true; return []; }),
+      S.sb.from('mc_usuarios').select('*').then(r=>{ if(r.error) throw r.error; return r.data; }).catch(e=>{ console.warn(e); S.semV3=true; return []; }),
+      S.sb.from('mc_perfis').select('*').then(r=>{ if(r.error) throw r.error; return r.data; }).catch(e=>{ console.warn(e); S.semV3=true; return []; })
+    ]);
+    S.kits = kits; S.usuarios = usuarios; S.perfis = perfis;
+    if (S.semV3) toast('Rode o supabase_atualizacao_v3.sql para ativar Kits e Acessos', 8000);
+    definePermissoes();
     if (prem.data?.dados) S.P = mergeP(prem.data.dados);
     S.produtos = produtos.map(p => ({...p, name:p.name||'', marca:p.marca||'', departamento:p.departamento||'', status:p.status||'', inflamavel:p.inflamavel||'', seller_id:String(p.seller_id??'')}));
     S.anuncios = anuncios;
     S.acoes = Object.fromEntries(acoes.map(a=>[acaoKey(a.sku,a.marketplace), a]));
     S.snapshots = (snaps.data||[]).reverse();
     S.cargas = cargas.data||[];
-    recalc(); render();
+    recalc(); render(); aplicaPerfilNaTela();
   } catch(e){ console.error(e); toast('Erro ao carregar: ' + (e.message||e), 6000); }
   finally{ loading(false); }
 }
@@ -751,6 +849,7 @@ function recalc(){
   S.sum = resumo(S.res);
   refreshCanais();
   S.deps = [...new Set(S.res.linhas.map(l=>l.departamento).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  S.kitsCalc = calculaKits(S.kits, S.produtos.filter(p=>String(p.seller_id)===String(S.P.seller_id)), S.P);
 }
 function pendentes(mp){
   let n=0; for (const l of S.res.linhas) if (isAcao(l.mp[mp].status) && !isDone(l,mp)) n++;
@@ -759,8 +858,8 @@ function pendentes(mp){
 
 /* ============================ NAV / RENDER ============================ */
 function buildNav(){
-  const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['premissas','Premissas'], ['cargas','Cargas']];
-  if (!tabs.some(t=>t[0]===S.tab) && S.tab!=='outros') S.tab='geral';
+  const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['kits','Kits e composições'], ['premissas','Premissas'], ['cargas','Cargas'], ['acessos','Acessos']].filter(([id])=>veTela(telaDe(id)));
+  if (!tabs.some(t=>t[0]===S.tab) && !(S.tab==='outros' && veTela('canais'))) S.tab = tabs[0]?.[0] || 'geral';
   $('#nav').innerHTML = tabs.map(([id,t])=>`<button data-tab="${id}" class="${S.tab===id?'on':''}">${MPN[id]?icoHTML(id,'sm'):''}${esc(t)}</button>`).join('');
   document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
     if (S.tab==='premissas' && b.dataset.tab!=='premissas') S.Pd = null;
@@ -777,6 +876,8 @@ function render(){
   else if (t==='premissas') renderPremissas();
   else if (t==='cargas') renderCargas();
   else if (t==='outros') renderOutros();
+  else if (t==='kits') renderKits();
+  else if (t==='acessos') renderAcessos();
 }
 function semDados(){
   return `<div class="card"><div class="empty" style="padding:56px 12px"><b>Nenhuma base carregada ainda</b>Envie a base de produtos e o export de preços do Anymarket na aba Cargas.<br><br><button class="btn lime" onclick="goTab('cargas')">Ir para Cargas</button></div></div>`;
@@ -940,7 +1041,7 @@ function renderMP(mp){
     <div class="card"><h3>Onde estão as ações</h3><div class="sub">Top departamentos por quantidade de SKUs em cada ação</div>${legendHTML(ACOES.filter(x=>x!=='Dif'||preco).map(x=>[STATUS_LABEL[x],ST_COLOR[x]]))}<div class="chart-box sm"><canvas id="chDep"></canvas></div></div>
   </div>
   <div class="card" id="mpList">
-    <div class="card-h" style="margin-bottom:10px"><div><h3 id="mpListTit"></h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportMP('${mp}')">Exportar para Excel</button></div>
+    <div class="card-h" style="margin-bottom:10px"><div><h3 id="mpListTit"></h3><div class="sub" style="margin:0">Clique no SKU para ver como a comissão estimada foi calculada · a exportação leva exatamente o que está filtrado</div></div><button class="btn lime" onclick="exportMP('${mp}')">Exportar para Excel</button></div>
     <div class="filters">
       <input type="search" id="fq" placeholder="Buscar SKU, nome ou EAN" value="${esc(f.q)}">
       <select id="fst">${ST_OPTS.filter(o=>o[0]!=='Dif'||preco).map(([v,t])=>`<option value="${v}" ${f.st===v?'selected':''}>${t}</option>`).join('')}</select>
@@ -1129,7 +1230,7 @@ function drawMPTable(mp){
     const done = r.orfao ? !!S.acoes[acaoKey(r.sku,mp)]?.concluido : isDone(r.l,mp);
     const chk = isAcao(s) ? `<input type="checkbox" class="chk" ${done?'checked':''} onchange="toggleAcao('${mp}','${esc(r.sku)}','${s}',this.checked)" title="Marcar ação como concluída">` : '';
     const dif = r.ativo!=null && r.ppor!=null && Math.round(r.ativo*100)!==Math.round(r.ppor*100);
-    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono">${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="hxl">${esc(r.dep)}</td><td class="n hxl">${fN(r.stock)}</td><td class="n hm">${fN(r.estc)}</td><td class="n hxl">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td>${preco?`<td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td>`:''}<td class="n hl">${fM(r.frete)}</td><td class="n hl" title="${r.l?fP(r.x.com,1)+' × Preço Por = '+fR(r.x.comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td>${pubHTML(r.x)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="sit">${esc(r.sit)}${errHTML(r.x.erros)}</td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
+    return `<tr style="${done?'opacity:.55':''}"><td class="c">${chk}</td><td class="mono"><a class="lnk" onclick="abrirDetalhe('${mp}','${esc(r.sku).replace(/'/g,"\\'")}')" title="Ver o detalhe do cálculo">${esc(r.sku)}</a></td><td>${esc(r.name)}</td><td class="hxl">${esc(r.dep)}</td><td class="n hxl">${fN(r.stock)}</td><td class="n hm">${fN(r.estc)}</td><td class="n hxl">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td>${preco?`<td class="n" style="${dif?'color:#7a5300;font-weight:600':''}">${fM(r.ativo)}</td>`:''}<td class="n hl">${fM(r.frete)}</td><td class="n hl" title="${r.l?fP(r.x.com,1)+' × Preço Por = '+fR(r.x.comissao):''}">${mp==='shopee' ? fP(r.comissao,1) : fM(r.comissao)}</td><td class="n" style="${r.pct>S.P.comissao_max?'color:#a32221':''}">${fP(r.pct)}</td><td>${pubHTML(r.x)}</td><td><span class="pill ${s}">${esc(r.st)}</span></td><td class="sit">${esc(r.sit)}${errHTML(r.x.erros)}</td><td class="hx wrap" style="line-height:1.9">${chipsCanais(r.ocIds)}</td></tr>`;
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
   const stTxt = Object.fromEntries(ST_OPTS)[f.st] || f.st, pubTxt = f.pub ? Object.fromEntries(PUB_OPTS)[f.pub] : '';
@@ -1380,7 +1481,7 @@ function canaisExtraHTML(P){
       <div class="form-grid">
         <div class="fld"><label>Nome do canal</label>${txt(`canais_extra.${i}.nome`,c.nome,'Ex.: Leroy Merlin')}</div>
         <div class="fld"><label>Nome na coluna MARKETPLACE do Anymarket</label>${txt(`canais_extra.${i}.anymarket`,c.anymarket,'Ex.: Leroy Merlin')}<div class="hint">Precisa ser igual ao export</div></div>
-        <div class="fld"><label>Ícone do canal</label><input type="hidden" data-p="canais_extra.${i}.icone" data-t="s" value="${esc(c.icone||'')}"><label class="btn sm" style="display:inline-flex;margin:0">Enviar imagem<input type="file" accept="image/*" class="hidden" onchange="subirIcone(${i},this)"></label>${c.icone?` <button class="btn sm" onclick="editCanais(x=>{x[${i}].icone=''})">Remover</button>`:''}<div class="hint">PNG quadrado, de preferência 128 px ou mais</div></div>
+        <div class="fld"><label>Ícone do canal</label><input type="hidden" data-p="canais_extra.${i}.icone" data-t="s" value="${esc(c.icone||'')}"><label class="btn sm icone-up" style="display:inline-flex;margin:0">Enviar imagem<input type="file" accept="image/*" class="hidden" onchange="subirIcone(${i},this)"></label>${c.icone?` <button class="btn sm" onclick="editCanais(x=>{x[${i}].icone=''})">Remover</button>`:''}<div class="hint">PNG quadrado, de preferência 128 px ou mais</div></div>
         <div class="fld"><label>Texto da etiqueta (sem ícone)</label>${txt(`canais_extra.${i}.sigla`,c.sigla,'Ex.: Leroy')}</div>
         <div class="fld"><label>Cor de fundo da etiqueta</label><input type="color" data-p="canais_extra.${i}.cor_fundo" data-t="s" value="${esc(c.cor_fundo||'#52514e')}" style="height:36px;padding:3px"></div>
         <div class="fld"><label>Cor da fonte da etiqueta</label><input type="color" data-p="canais_extra.${i}.cor_fonte" data-t="s" value="${esc(c.cor_fonte||'#ffffff')}" style="height:36px;padding:3px"></div>
@@ -1462,12 +1563,14 @@ function renderCargas(){
     </div>
   </div>
   ${freteCardHTML()}
+  ${kitCardHTML()}
   <div class="card">
     <h3>Histórico de cargas</h3><div class="sub">${S.local?'No modo local o histórico não é gravado':'Últimas 40 cargas'}</div>
     <table class="tbl"><thead><tr><th style="width:20%">Data</th><th style="width:18%">Tipo</th><th>Arquivo</th><th class="n" style="width:12%">Linhas</th><th class="hs" style="width:22%">Usuário</th></tr></thead>
-    <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':c.tipo==='publicacoes'?'Anúncios (marketplaces)':'Preços Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
+    <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':c.tipo==='publicacoes'?'Transmissões (marketplaces)':c.tipo==='kits'?'Kits e composições':'Preços Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
   </div>`;
   if (S.fila.length) processaFila();
+  $('#kitFile').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerKits(f); };
   $('#freteFile').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerFrete(f); };
   const d=$('#drop');
   d.onclick=()=>$('#fileInput').click();
@@ -1672,6 +1775,270 @@ async function registrarSnapshot(silent){
   if (!S.local){ const { error } = await S.sb.from('mc_snapshots').insert({ resumo:snap.resumo, usuario:snap.usuario }); if (error){ toast('Erro: '+error.message); return; } }
   S.snapshots.push(snap);
   if (!silent) toast('Fotografia registrada');
+}
+
+/* ======================= DETALHE DO SKU ======================= */
+function modal(html, wide=true){ $('#modalHost').innerHTML = `<div class="overlay" onclick="if(event.target===this)this.remove()"><div class="modal ${wide?'wide':''}">${html}<div class="act"><button class="btn pri" onclick="this.closest('.overlay').remove()">Fechar</button></div></div></div>`; }
+function tabelaCusto(d, preco){
+  const lim = S.P.comissao_max;
+  return `<table class="dt"><tbody>
+    <tr><td>Preço de referência (Preço Por do site)</td><td class="v">${fR(preco)}</td><td class="o">base do cálculo</td></tr>
+    ${d.linhas.map(x=>`<tr><td>${esc(x.r)}</td><td class="v">${esc(x.v)}</td><td class="o">${esc(x.o)}</td></tr>`).join('')}
+    <tr class="tot"><td>Custo total no canal</td><td class="v">${fR(d.total)}</td><td class="o">taxa + fixo + frete</td></tr>
+    <tr class="tot"><td>Comissão estimada</td><td class="v" style="color:${d.pct!=null&&d.pct>lim?'#a32221':'#005c00'}">${fP(d.pct,2)}</td><td class="o">${d.pct==null?'sem frete para o peso':'custo ÷ preço · limite '+fP(lim,0)+' · '+(d.pct>lim?'acima do limite':'dentro do limite')}</td></tr>
+  </tbody></table>`;
+}
+function abrirDetalhe(mp, sku){
+  const l = S.res.linhas.find(x=>x.sku===sku), o = (S.res.orfaos[mp]||[]).find(x=>x.sku===sku);
+  const x = l ? l.mp[mp] : o; if (!x) return;
+  let h = `<h2>${icoHTML(mp,'lg')}<span class="mono" style="font-size:15px">${esc(sku)}</span> · ${esc(l?l.name:(o.titulo||'SKU fora do catálogo'))}</h2>`;
+  h += `<p style="margin:4px 0 8px"><span class="pill ${x.status}">${esc(l?statusLabel(l,mp):(o.status?STATUS_LABEL[o.status]:'Fora do catálogo'))}</span> <span class="sit" style="margin-left:6px">${esc(situacao(l,mp,o))}</span></p>`;
+  if (l){
+    const d = detalheCusto(mp, l.preco_ref, l.peso, S.P);
+    h += `<div class="mh">Como chegamos na comissão estimada</div>` + tabelaCusto(d, l.preco_ref);
+    if (!l.elegivel) h += `<div class="note" style="margin-bottom:10px">O SKU não é elegível (${esc(l.motivos.join(' · '))}). O cálculo acima é só informativo.</div>`;
+    h += `<div class="mh">Produto no site</div><table class="dt"><tbody>
+      <tr><td>Preço De / Preço Por</td><td class="v">${fR(l.price)} / ${fR(l.preco_ref)}</td><td class="o">${l.special_price>0?'tem Preço Por':'sem Preço Por: usa o Preço De'}</td></tr>
+      <tr><td>Peso</td><td class="v">${l.peso==null?'—':fN(l.peso,3)+' kg'}</td><td class="o">usado na faixa de frete</td></tr>
+      <tr><td>Dimensões (A × L × P)</td><td class="v">${[l.altura,l.largura,l.profundidade].map(v=>v==null?'—':fN(v,v%1?1:0)).join(' × ')} cm</td><td class="o">limite ${fN(S.P.dim_max)} cm</td></tr>
+      <tr><td>Estoque no site</td><td class="v">${fN(l.stock)}</td><td class="o">${esc(l.status)}${l.inflamavel?' · inflamável: '+esc(l.inflamavel):''}</td></tr>
+      <tr><td>Marca / Departamento</td><td class="v" style="white-space:normal">${esc(l.marca)} · ${esc(l.departamento)}</td><td class="o">EAN ${esc(l.ean||'—')}</td></tr>
+    </tbody></table>`;
+  }
+  h += `<div class="mh">Anúncio no ${esc(MPN[mp])}</div><table class="dt"><tbody>
+    <tr><td>Publicação</td><td class="v">${x.cad?esc(x.pub||'—'):'Não cadastrado'}</td><td class="o">${x.n>1?x.n+' anúncios para o SKU':''}</td></tr>
+    ${x.ativo!=null?`<tr><td>Preço Canal</td><td class="v">${fR(x.ativo)}</td><td class="o">export de preços do Anymarket</td></tr>`:''}
+    ${x.estoque_canal!=null?`<tr><td>Estoque no canal</td><td class="v">${fN(x.estoque_canal)}</td><td class="o"></td></tr>`:''}
+    ${(x.codigos||[]).length?`<tr><td>Código no marketplace</td><td class="v" style="white-space:normal">${x.codigos.map(esc).join(', ')}</td><td class="o">${(x.tipos||[]).map(esc).join(', ')}</td></tr>`:''}
+    ${(x.links||[]).length?`<tr><td>Link</td><td colspan="2">${x.links.map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">abrir anúncio</a>`).join(' · ')}</td></tr>`:''}
+    ${x.erro?`<tr><td>Erro de transmissão</td><td colspan="2" style="color:#a32221;white-space:pre-wrap">${esc((x.erros||[]).join('\n\n')||'Erro')}</td></tr>`:''}
+  </tbody></table>`;
+  if (l) h += `<div class="mh">Nos outros canais</div><table class="dt"><tbody>${MARKETPLACES.filter(m=>m.id!==mp).map(m=>{ const y=l.mp[m.id]; return `<tr><td>${icoHTML(m.id,'sm')}${esc(m.nome)}</td><td class="v">${y.cad?esc(y.pub||''):'Não cadastrado'}</td><td class="o">${y.status?STATUS_LABEL[y.status]:''}${y.pct!=null?' · comissão '+fP(y.pct):''}</td></tr>`; }).join('')}</tbody></table>`;
+  modal(h);
+}
+
+/* ======================= KITS E COMPOSIÇÕES ======================= */
+function renderKits(){
+  const m=$('#main'), K=S.kitsCalc;
+  const f = S.f.kits ||= { q:'', sit:'', open:{} };
+  if (!K.length){ m.innerHTML = head('Kits e composições','Composições de kits com preço sugerido, peso e comissão estimada por canal') + `<div class="card"><div class="empty" style="padding:56px 12px"><b>Nenhum kit carregado</b>Envie a planilha de composições na aba Cargas, no quadro “Kits e composições”.${pode('cargas')?`<br><br><button class="btn lime" onclick="goTab('cargas');setTimeout(()=>$('#kitCard')?.scrollIntoView({behavior:'smooth'}),80)">Ir para Cargas</button>`:''}</div></div>`; return; }
+  const viav = id => K.filter(k=>k.mp[id]?.viavel).length;
+  m.innerHTML = head('Kits e composições', `${fN(K.length)} kits · peso do kit = soma de peso × quantidade dos componentes · comissão sobre o preço sugerido · limite de ${fP(S.P.comissao_max,0)}`) + `
+  <div class="grid gk" style="margin-bottom:16px">
+    ${kpi('Kits', fN(K.length), fN(K.reduce((a,k)=>a+k.n,0))+' linhas de composição', true)}
+    ${kpi('Kits elegíveis', fN(K.filter(k=>k.elegivel).length), 'Componentes na base, habilitados e dentro dos limites')}
+    ${MARKETPLACES.map(mm=>kpi(icoHTML(mm.id,'sm')+'Viáveis no '+esc(mm.sigla), fN(viav(mm.id)), 'Comissão estimada até '+fP(S.P.comissao_max,0))).join('')}
+  </div>
+  <div class="card" id="kitList">
+    <div class="card-h" style="margin-bottom:10px"><div><h3 id="kitTit"></h3><div class="sub" style="margin:0">Clique no kit para ver a composição · clique na comissão para ver o cálculo</div></div><button class="btn lime" onclick="exportKits()">Exportar para Excel</button></div>
+    <div class="filters">
+      <input type="search" id="kq" placeholder="Buscar kit ou SKU do componente" value="${esc(f.q)}">
+      <select id="ksit"><option value="">Todos os kits</option><option value="eleg" ${f.sit==='eleg'?'selected':''}>Só elegíveis</option><option value="prob" ${f.sit==='prob'?'selected':''}>Com problema</option>${MARKETPLACES.map(mm=>`<option value="v:${mm.id}" ${f.sit==='v:'+mm.id?'selected':''}>Viável no ${esc(mm.nome)}</option>`).join('')}</select>
+    </div>
+    <div id="kitTable"></div>
+  </div>`;
+  $('#kq').oninput=e=>{ f.q=e.target.value; drawKits(); };
+  $('#ksit').onchange=e=>{ f.sit=e.target.value; drawKits(); };
+  drawKits();
+}
+function kitRows(){
+  const f=S.f.kits, q=f.q.trim().toLowerCase();
+  return S.kitsCalc.filter(k=>{
+    if (f.sit==='eleg' && !k.elegivel) return false;
+    if (f.sit==='prob' && k.elegivel) return false;
+    if (f.sit.startsWith('v:') && !k.mp[f.sit.slice(2)]?.viavel) return false;
+    if (q && !k.kit.toLowerCase().includes(q) && !k.itens.some(i=>i.sku.toLowerCase().includes(q)||i.descricao.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+function drawKits(){
+  const f=S.f.kits, rows=kitRows(), lim=S.P.comissao_max;
+  const cols=[['Kit','auto'],['Itens','5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7.5%','n']),['Situação','17%','']];
+  $('#kitTit').textContent = `Kits — ${fN(rows.length)}`;
+  $('#kitTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${(c[2]||'').replace('n','').trim()}" style="width:${c[1]}">`).join('')}</colgroup>
+  <thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${c[0]}</th>`).join('')}</tr></thead><tbody>
+  ${rows.map(k=>{ const i=S.kitsCalc.indexOf(k), aberto=!!f.open[k.kit];
+    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
+      ${MARKETPLACES.map(mm=>{ const d=k.mp[mm.id]; return `<td class="n"><a class="lnk" style="color:${d.pct==null?'inherit':d.pct>lim?'#a32221':'#005c00'};font-weight:600" onclick="event.stopPropagation();detalheKit(${i},'${mm.id}')">${fP(d.pct)}</a> ${d.viavel?'✓':''}</td>`; }).join('')}
+      <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td></tr>`;
+    const sub = !aberto ? '' : `<tr class="kitsub"><td colspan="${cols.length}" style="padding:4px 10px 12px 26px">
+      <table class="tbl" style="background:#fff"><colgroup><col style="width:9%"><col><col style="width:6%"><col style="width:10%"><col style="width:10%"><col style="width:8%" class="hs"><col style="width:8%"><col style="width:9%" class="hs"><col style="width:12%"></colgroup>
+      <thead><tr><th>SKU</th><th>Componente</th><th class="n">Qtd.</th><th class="n">Preço Por (R$)</th><th class="n">Subtotal (R$)</th><th class="n hs">Peso un. (kg)</th><th class="n">Estoque</th><th class="n hs">Kits possíveis</th><th>Status no site</th></tr></thead>
+      <tbody>${k.itens.map(c=>`<tr><td class="mono">${esc(c.sku)}</td><td>${esc(c.produto?.name||c.descricao)}</td><td class="n">${fN(c.quantidade)}</td><td class="n">${fM(c.preco_unit)}</td><td class="n">${fM(c.preco_unit==null?null:c.preco_unit*c.quantidade)}</td><td class="n hs">${fN(c.peso_unit,3)}</td><td class="n">${fN(c.estoque)}</td><td class="n hs">${fN(c.disponiveis)}</td><td>${!c.produto?'<span class="pill Inativar">Fora da base</span>':String(c.produto.status).toLowerCase()==='habilitado'?'<span class="pill ok">Habilitado</span>':`<span class="pill">${esc(c.produto.status)}</span>`}</td></tr>`).join('')}</tbody></table></td></tr>`;
+    return linha+sub; }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum kit com esses filtros.</div></td></tr>`}
+  </tbody></table>`;
+}
+function togKit(i){ const k=S.kitsCalc[i]; S.f.kits.open[k.kit]=!S.f.kits.open[k.kit]; drawKits(); }
+function detalheKit(i, mp){
+  const k=S.kitsCalc[i], d=k.mp[mp];
+  modal(`<h2>${icoHTML(mp,'lg')}${esc(k.kit)}</h2><p style="margin:4px 0 8px">${fN(k.n)} componentes · peso do kit ${fN(k.peso,3)} kg · ${k.elegivel?'elegível':'com problema: '+esc(k.problemas.join(' · '))}</p>
+    <div class="mh">Como chegamos na comissão estimada no ${esc(MPN[mp])}</div>${tabelaCusto(d, k.preco)}`);
+}
+function exportKits(){
+  const rows = kitRows();
+  const wb = XLSX.utils.book_new();
+  const kits = rows.map(k=>{ const o={ 'Kit':k.kit, 'Itens':k.n, 'Unidades':k.unidades, 'Preço sugerido':k.preco, 'Valor avulso':k.avulso, 'Kit vs avulso %':k.desconto==null?null:Math.round(-k.desconto*10000)/10000, 'Peso (kg)':k.peso, 'Kits possíveis':k.disponiveis, 'Elegível':k.elegivel?'Sim':'Não', 'Situação':k.problemas.join(' · ')||'Elegível' };
+    for (const mm of MARKETPLACES){ const d=k.mp[mm.id]; o[mm.nome+' - comissão estimada %']=d.pct==null?null:Math.round(d.pct*10000)/10000; o[mm.nome+' - taxa (R$)']=d.com!=null?Math.round(d.com*k.preco*100)/100:null; o[mm.nome+' - fixo (R$)']=d.fixo??null; o[mm.nome+' - frete (R$)']=d.frete??null; o[mm.nome+' - viável']=d.viavel?'Sim':'Não'; }
+    return o; });
+  const comp = rows.flatMap(k=>k.itens.map(c=>({ 'Kit':k.kit, 'SKU':c.sku, 'Componente':c.produto?.name||c.descricao, 'Quantidade':c.quantidade, 'Preço Por':c.preco_unit, 'Subtotal':c.preco_unit==null?null:Math.round(c.preco_unit*c.quantidade*100)/100, 'Peso unitário (kg)':c.peso_unit, 'Estoque':c.estoque, 'Kits possíveis':c.disponiveis, 'Status no site':c.produto?c.produto.status:'Fora da base' })));
+  for (const [nome, data] of [['Kits',kits],['Composições',comp]]){ const ws=XLSX.utils.json_to_sheet(data); if(data.length){ ws['!cols']=Object.keys(data[0]).map(k=>({wch:Math.min(50,Math.max(k.length+2,...data.slice(0,200).map(r=>String(r[k]??'').length)))})); ws['!autofilter']={ref:ws['!ref']}; } XLSX.utils.book_append_sheet(wb, ws, nome); }
+  XLSX.writeFile(wb, 'MATCON_Kits_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+/* --- carga de kits --- */
+function kitCardHTML(){
+  return `<div class="card" id="kitCard" style="margin-bottom:16px">
+    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido, Peso</span> (uma linha por componente). Substitui todos os kits.</div>
+    <div class="filters"><label class="btn lime" style="margin:0">Escolher planilha de kits<input type="file" id="kitFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
+    <span class="muted" style="font-size:12px">${S.kits.length?fN(new Set(S.kits.map(k=>k.kit)).size)+' kits carregados hoje no painel':'Nenhum kit carregado'}</span></div>
+    <div id="kitStatus"></div>
+  </div>`;
+}
+async function lerKits(file){
+  const st=$('#kitStatus');
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    let rows=null;
+    for (const name of wb.SheetNames){
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, raw:true, blankrows:false });
+      const i = aoa.findIndex(r=>{ const h=(r||[]).map(x=>String(x??'').trim().toLowerCase()); return h.includes('kit') && h.includes('sku') && h.includes('quantidade'); });
+      if (i<0) continue;
+      const hdr=aoa[i].map(x=>String(x??'').trim());
+      rows = aoa.slice(i+1).map(r=>{ const o={}; hdr.forEach((k,j)=>{ if(k) o[k]=r[j]; }); return o; }).map(normalizaKit).filter(k=>k.kit && k.sku);
+      break;
+    }
+    if (!rows || !rows.length){ st.innerHTML='<div class="err">Não encontrei as colunas Kit, SKU e Quantidade.</div>'; return; }
+    const base = new Set(S.produtos.map(p=>p.sku));
+    const fora = [...new Set(rows.filter(r=>!base.has(r.sku)).map(r=>r.sku))];
+    const nk = new Set(rows.map(r=>r.kit)).size;
+    S.kitNovo = { arquivo:file.name, rows };
+    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b>: ${fN(nk)} kits, ${fN(rows.length)} componentes.${fora.length?` <span class="err" style="display:inline">${fN(fora.length)} SKU(s) fora da base: ${fora.slice(0,10).map(esc).join(', ')}${fora.length>10?'…':''}</span>`:' Todos os componentes estão na base.'}</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" onclick="gravarKits()">Confirmar kits</button><button class="btn" onclick="$('#kitStatus').innerHTML=''">Cancelar</button></div>`;
+  } catch(e){ console.error(e); st.innerHTML=`<div class="err">Erro ao ler a planilha: ${esc(e.message||e)}</div>`; }
+}
+async function gravarKits(){
+  const N=S.kitNovo; if(!N) return;
+  try{
+    if (!S.local){
+      const { data:c, error:e1 } = await S.sb.from('mc_cargas').insert({ tipo:'kits', arquivo:N.arquivo, linhas:N.rows.length, usuario:S.user?.email||null }).select().single();
+      if (e1) throw e1;
+      const { error } = await S.sb.from('mc_kits').insert(N.rows.map(r=>({...r, carga_id:c.id})));
+      if (error) throw error;
+      const { error:e2 } = await S.sb.from('mc_kits').delete().neq('carga_id', c.id);
+      if (e2) throw e2;
+      S.cargas.unshift(c);
+    } else S.cargas.unshift({ tipo:'kits', arquivo:N.arquivo, linhas:N.rows.length, criado_em:new Date().toISOString() });
+    S.kits = N.rows; S.kitNovo=null; recalc();
+    toast('Kits gravados'); goTab('kits');
+  } catch(e){ console.error(e); toast('Erro ao gravar kits: '+(e.message||e), 7000); }
+}
+
+/* ======================= NÍVEIS DE ACESSO ======================= */
+const TELAS = [['geral','Visão geral'],['canais','Telas dos canais'],['catalogo','Catálogo'],['kits','Kits e composições'],['premissas','Premissas'],['cargas','Cargas'],['acessos','Acessos']];
+const ACOES_P = [['cargas','Subir arquivos (base, transmissões, frete, kits)'],['premissas','Editar premissas e canais'],['concluir','Marcar ações como concluídas'],['exportar','Exportar para Excel'],['acessos','Gerenciar usuários e perfis']];
+const PERFIS_PADRAO = [
+  { nome:'Administrador', telas:TELAS.map(t=>t[0]), acoes:ACOES_P.map(a=>a[0]) },
+  { nome:'Operador', telas:['geral','canais','catalogo','kits','premissas','cargas'], acoes:['cargas','concluir','exportar'] },
+  { nome:'Consulta', telas:['geral','canais','catalogo','kits'], acoes:['exportar'] }
+];
+const telaDe = id => MPN[id] || id==='outros' ? 'canais' : id;
+function definePermissoes(){
+  const tudo = { perfil:'Administrador', telas:new Set(TELAS.map(t=>t[0])), acoes:new Set(ACOES_P.map(a=>a[0])), setup:false, sem:false };
+  if (S.local || S.semV3){ S.perm = tudo; return; }
+  if (!S.usuarios.length){ S.perm = { ...tudo, setup:true }; return; }
+  const email = String(S.user?.email||'').toLowerCase();
+  const u = S.usuarios.find(x=>String(x.email).toLowerCase()===email);
+  const p = u && (S.perfis.find(x=>x.nome===u.perfil) || PERFIS_PADRAO.find(x=>x.nome===u.perfil));
+  if (!p){ S.perm = { perfil:null, telas:new Set(), acoes:new Set(), sem:true }; return; }
+  S.perm = { perfil:p.nome, telas:new Set(p.telas||[]), acoes:new Set(p.acoes||[]), setup:false, sem:false };
+}
+S.perm = { perfil:'Administrador', telas:new Set(TELAS.map(t=>t[0])), acoes:new Set(ACOES_P.map(a=>a[0])) };
+const veTela = t => !!S.perm?.telas.has(t);
+const pode = a => !!S.perm?.acoes.has(a);
+/* Esconde botões de ação conforme o perfil (vale para tudo que é desenhado na tela) */
+const PERM_SEL = {
+  exportar: '[onclick^="export"]',
+  cargas: '#drop, [onclick^="registrarSnapshot"], #freteCard .filters, [onclick^="rmFrete"], [onclick^="gravarFrete"], #kitCard .filters, [onclick^="gravarKits"], [onclick^="rmFila"], #btnConf, [onclick^="irFrete"]',
+  premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick*="novoCanal"], .icone-up',
+  concluir: '[onchange^="toggleAcao"]'
+};
+function applyPerms(root=document){
+  for (const [a, sel] of Object.entries(PERM_SEL)) if (!pode(a)) root.querySelectorAll(sel).forEach(el=>el.remove());
+  if (S.tab==='premissas' && !pode('premissas')) root.querySelectorAll('#main input, #main select').forEach(el=>el.disabled=true);
+}
+new MutationObserver(()=>applyPerms()).observe(document.getElementById('main'), { childList:true, subtree:true });
+new MutationObserver(()=>applyPerms()).observe(document.getElementById('modalHost'), { childList:true, subtree:true });
+
+function renderAcessos(){
+  const m=$('#main');
+  if (S.local){ m.innerHTML = head('Acessos','Usuários e perfis') + `<div class="card"><div class="empty"><b>Disponível só com o Supabase conectado</b>No modo local todo mundo tem acesso total.</div></div>`; return; }
+  if (S.semV3){ m.innerHTML = head('Acessos','Usuários e perfis') + `<div class="card"><div class="empty"><b>Falta atualizar o banco</b>Rode o supabase_atualizacao_v3.sql no SQL Editor do Supabase e recarregue a página.</div></div>`; return; }
+  const perfis = S.perfis.length ? S.perfis : PERFIS_PADRAO;
+  const ed = pode('acessos');
+  m.innerHTML = head('Acessos','Quem entra no painel e o que cada perfil vê e pode fazer') + `
+  ${S.perm.setup?`<div class="note" style="margin-bottom:14px"><b>Acessos ainda não configurados:</b> enquanto não houver nenhum usuário na lista, todos os logins têm acesso total. Comece se adicionando como Administrador.</div>`:''}
+  <div class="card" style="margin-bottom:16px">
+    <h3>Usuários</h3><div class="sub">O login (e-mail e senha) é criado no Supabase em Authentication › Users. Aqui você define o perfil de cada e-mail.</div>
+    <table class="tbl"><colgroup><col style="width:36%"><col style="width:26%"><col style="width:24%"><col style="width:14%"></colgroup>
+    <thead><tr><th>E-mail</th><th>Nome</th><th>Perfil</th><th></th></tr></thead>
+    <tbody>${S.usuarios.map((u,i)=>`<tr><td>${esc(u.email)}${String(u.email).toLowerCase()===String(S.user?.email||'').toLowerCase()?' <span class="muted">(você)</span>':''}</td><td>${esc(u.nome||'')}</td><td>${ed?`<select onchange="salvaUsuario(${i},this.value)">${perfis.map(p=>`<option ${p.nome===u.perfil?'selected':''}>${esc(p.nome)}</option>`).join('')}</select>`:esc(u.perfil)}</td><td class="c">${ed?`<button class="btn sm" onclick="rmUsuario(${i})">Remover</button>`:''}</td></tr>`).join('') || `<tr><td colspan="4"><div class="empty">Nenhum usuário cadastrado.</div></td></tr>`}
+    ${ed?`<tr><td><input id="nuEmail" type="email" placeholder="email@empresa.com.br" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px" value="${S.perm.setup?esc(S.user?.email||''):''}"></td><td><input id="nuNome" placeholder="Nome" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px"></td><td><select id="nuPerfil">${perfis.map(p=>`<option>${esc(p.nome)}</option>`).join('')}</select></td><td class="c"><button class="btn lime sm" onclick="addUsuario()">Adicionar</button></td></tr>`:''}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-h"><div><h3>Perfis</h3><div class="sub">Marque as telas que o perfil vê e os botões de ação que ele pode usar</div></div>${ed?`<div style="display:flex;gap:8px"><button class="btn" onclick="addPerfil()">+ Novo perfil</button><button class="btn pri" onclick="salvaPerfis()">Salvar perfis</button></div>`:''}</div>
+    <table class="tbl mx hw" id="perfisTbl"><colgroup><col style="width:14%">${TELAS.map(()=>'<col>').join('')}${ACOES_P.map(()=>'<col>').join('')}<col style="width:6%"></colgroup>
+    <thead><tr><th>Perfil</th>${TELAS.map(t=>`<th title="Tela">${esc(t[1])}</th>`).join('')}${ACOES_P.map(a=>`<th style="color:#476000" title="Botão de ação">${esc(a[1])}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${perfis.map((p,i)=>`<tr data-i="${i}"><td>${ed&&!PERFIS_PADRAO.some(x=>x.nome===p.nome)?`<input class="pnome" value="${esc(p.nome)}" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:4px 6px">`:`<b class="pnome-t">${esc(p.nome)}</b>`}</td>
+      ${TELAS.map(t=>`<td><input type="checkbox" class="chk pt" data-k="${t[0]}" ${(p.telas||[]).includes(t[0])?'checked':''} ${ed?'':'disabled'}></td>`).join('')}
+      ${ACOES_P.map(a=>`<td><input type="checkbox" class="chk pa" data-k="${a[0]}" ${(p.acoes||[]).includes(a[0])?'checked':''} ${ed&&!(p.nome==='Administrador')?'':'disabled'}></td>`).join('')}
+      <td class="c">${ed&&!PERFIS_PADRAO.some(x=>x.nome===p.nome)?`<button class="btn sm" onclick="rmPerfil(${i})">×</button>`:''}</td></tr>`).join('')}</tbody></table>
+    <div class="note" style="margin-top:10px">O perfil Administrador sempre pode tudo. As permissões também valem no banco: quem não pode subir arquivos ou editar premissas não consegue gravar, mesmo tentando por fora do painel.</div>
+  </div>`;
+}
+async function addUsuario(){
+  const email=$('#nuEmail').value.trim().toLowerCase(), nome=$('#nuNome').value.trim(), perfil=$('#nuPerfil').value;
+  if (!/^\S+@\S+\.\S+$/.test(email)){ toast('Informe um e-mail válido'); return; }
+  if (!S.perfis.length) await gravaPerfis(PERFIS_PADRAO);
+  const { error } = await S.sb.from('mc_usuarios').upsert({ email, nome, perfil });
+  if (error){ toast('Erro: '+error.message, 6000); return; }
+  await recarregaAcessos(); toast('Usuário adicionado');
+}
+async function salvaUsuario(i, perfil){
+  const u=S.usuarios[i]; const { error } = await S.sb.from('mc_usuarios').update({ perfil }).eq('email', u.email);
+  if (error){ toast('Erro: '+error.message, 6000); return; } await recarregaAcessos(); toast('Perfil alterado');
+}
+async function rmUsuario(i){
+  const u=S.usuarios[i]; if (!confirm('Remover o acesso de '+u.email+'?')) return;
+  const { error } = await S.sb.from('mc_usuarios').delete().eq('email', u.email);
+  if (error){ toast('Erro: '+error.message, 6000); return; } await recarregaAcessos();
+}
+function lePerfis(){
+  return [...document.querySelectorAll('#perfisTbl tbody tr')].map(tr=>{
+    const nome = tr.querySelector('.pnome')?.value.trim() || tr.querySelector('.pnome-t')?.textContent.trim();
+    const telas=[...tr.querySelectorAll('.pt')].filter(c=>c.checked).map(c=>c.dataset.k), acoes=[...tr.querySelectorAll('.pa')].filter(c=>c.checked).map(c=>c.dataset.k);
+    return { nome, telas, acoes: nome==='Administrador' ? ACOES_P.map(a=>a[0]) : acoes };
+  }).filter(p=>p.nome);
+}
+function addPerfil(){ const p=lePerfis(); p.push({ nome:'Novo perfil '+(p.length+1), telas:['geral'], acoes:[] }); S.perfis=p; renderAcessos(); }
+function rmPerfil(i){ const p=lePerfis(); if (S.usuarios.some(u=>u.perfil===p[i].nome)){ toast('Há usuários com esse perfil. Troque o perfil deles antes.'); return; } p.splice(i,1); S.perfis=p; renderAcessos(); }
+async function gravaPerfis(lista){
+  const { error } = await S.sb.from('mc_perfis').upsert(lista.map(p=>({ nome:p.nome, telas:p.telas, acoes:p.acoes })));
+  if (error){ toast('Erro: '+error.message, 6000); return false; }
+  const nomes = lista.map(p=>p.nome);
+  const sobras = S.perfis.filter(p=>!nomes.includes(p.nome) && !S.usuarios.some(u=>u.perfil===p.nome));
+  for (const p of sobras) await S.sb.from('mc_perfis').delete().eq('nome', p.nome);
+  return true;
+}
+async function salvaPerfis(){ if (await gravaPerfis(lePerfis())){ await recarregaAcessos(); toast('Perfis salvos'); } }
+async function recarregaAcessos(){
+  const [u,p] = await Promise.all([S.sb.from('mc_usuarios').select('*'), S.sb.from('mc_perfis').select('*')]);
+  S.usuarios=u.data||[]; S.perfis=p.data||[]; definePermissoes(); buildNav();
+  if (S.perm.sem) return semAcesso();
+  render();
+}
+function semAcesso(){
+  $('#nav').innerHTML='';
+  $('#main').innerHTML = `<div class="card" style="max-width:560px;margin:40px auto"><div class="empty" style="padding:40px 16px"><b>Seu usuário ainda não tem um perfil de acesso</b>Peça a um administrador do painel para incluir ${esc(S.user?.email||'seu e-mail')} na tela Acessos.</div></div>`;
 }
 
 /* ======================= EXPORTS ======================= */
