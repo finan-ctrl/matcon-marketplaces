@@ -669,7 +669,10 @@ function detalheCusto(id, preco, peso, P){
 /* ---------- kits e composições ---------- */
 function normalizaKit(row){
   const g = k => { for (const key of Object.keys(row)) if (key.trim().toLowerCase() === k) return row[key]; return null; };
-  return { kit: txt(g('kit')), sku: txt(g('sku')), descricao: decodeHtml(txt(g('descrição') ?? g('descricao'))), quantidade: num(g('quantidade')) || 1, preco_sugerido: num(g('preço sugerido') ?? g('preco sugerido')), peso: num(g('peso')) };
+  // preço: aceita "Preço sugerido", "Preço OUT sugerido", "Preco sugerido"… (qualquer coluna com preço/sugerido)
+  const keys = Object.keys(row), kn = k => k.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const kp = keys.find(k => /preco/.test(kn(k)) && /sugerid/.test(kn(k))) || keys.find(k => /preco|valor/.test(kn(k)));
+  return { kit: txt(g('kit')), sku: txt(g('sku')), descricao: decodeHtml(txt(g('descrição') ?? g('descricao'))), quantidade: num(g('quantidade')) || 1, preco_sugerido: kp ? num(row[kp]) : null, peso: null };
 }
 function calculaKits(kitsRows, produtos, P){
   const base = new Map(produtos.map(p => [p.sku, p]));
@@ -703,7 +706,7 @@ function calculaKits(kitsRows, produtos, P){
       const d = preco > 0 ? detalheCusto(m.id, preco, peso, P) : null;
       mp[m.id] = { ...(d||{}), viavel: !!(elegivel && d && d.pct != null && d.pct <= P.comissao_max) };
     }
-    out.push({ kit:nome, itens:comps, n:comps.length, unidades:comps.reduce((a,c)=>a+c.quantidade,0), preco, peso:Math.round(peso*1000)/1000, avulso:Math.round(avulso*100)/100,
+    out.push({ kit:nome, origem: itens.find(i=>i.origem)?.origem || '', itens:comps, n:comps.length, unidades:comps.reduce((a,c)=>a+c.quantidade,0), preco, peso:Math.round(peso*1000)/1000, avulso:Math.round(avulso*100)/100,
       desconto: avulso>0 ? 1 - preco/avulso : null, disponiveis: disp===Infinity?0:disp, elegivel, problemas, mp });
   }
   return out;
@@ -1830,10 +1833,10 @@ function abrirDetalhe(mp, sku){
 /* ======================= KITS E COMPOSIÇÕES ======================= */
 function renderKits(){
   const m=$('#main'), K=S.kitsCalc;
-  const f = S.f.kits ||= { q:'', sit:'', open:{} };
+  const f = S.f.kits ||= { q:'', sit:'', orig:'', open:{} };
   if (!K.length){ m.innerHTML = head('Kits e composições','Composições de kits com preço sugerido, peso e comissão estimada por canal') + `<div class="card"><div class="empty" style="padding:56px 12px"><b>Nenhum kit cadastrado</b>Crie um kit aqui ou envie a planilha de composições na aba Cargas, no quadro “Kits e composições”.<br><br><button class="btn pri" onclick="editarKit(-1)">+ Criar kit</button>${pode('cargas')?`<br><br><button class="btn lime" onclick="goTab('cargas');setTimeout(()=>$('#kitCard')?.scrollIntoView({behavior:'smooth'}),80)">Ir para Cargas</button>`:''}</div></div>`; return; }
   const viav = id => K.filter(k=>k.mp[id]?.viavel).length;
-  m.innerHTML = head('Kits e composições', `${fN(K.length)} kits · peso do kit = soma de peso × quantidade dos componentes · comissão sobre o preço sugerido · limite de ${fP(S.P.comissao_max,0)}`) + `
+  m.innerHTML = head('Kits e composições', `${fN(K.length)} kits de ${fN(new Set(K.map(k=>k.origem||'Sem origem')).size)} origem(ns) · peso do kit = soma de peso × quantidade dos componentes · comissão sobre o preço sugerido · limite de ${fP(S.P.comissao_max,0)}`) + `
   <div class="grid gk" style="margin-bottom:16px">
     ${kpi('Kits', fN(K.length), fN(K.reduce((a,k)=>a+k.n,0))+' linhas de composição', true)}
     ${kpi('Kits elegíveis', fN(K.filter(k=>k.elegivel).length), 'Componentes na base, habilitados e dentro dos limites')}
@@ -1842,33 +1845,36 @@ function renderKits(){
   <div class="card" id="kitList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="kitTit"></h3><div class="sub" style="margin:0">Clique no kit para ver a composição · clique na comissão para ver o cálculo</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="editarKit(-1)">+ Criar kit</button><button class="btn lime" onclick="exportKits()">Exportar para Excel</button></div></div>
     <div class="filters">
-      <input type="search" id="kq" placeholder="Buscar kit ou SKU do componente" value="${esc(f.q)}">
+      <input type="search" id="kq" placeholder="Buscar kit, arquivo de origem ou SKU" value="${esc(f.q)}">
+      <select id="korig"><option value="">Todas as origens</option>${[...new Set(S.kitsCalc.map(k=>k.origem||'Sem origem'))].sort().map(o=>`<option ${f.orig===o?'selected':''}>${esc(o)}</option>`).join('')}</select>
       <select id="ksit"><option value="">Todos os kits</option><option value="eleg" ${f.sit==='eleg'?'selected':''}>Só elegíveis</option><option value="prob" ${f.sit==='prob'?'selected':''}>Com problema</option>${MARKETPLACES.map(mm=>`<option value="v:${mm.id}" ${f.sit==='v:'+mm.id?'selected':''}>Viável no ${esc(mm.nome)}</option>`).join('')}</select>
     </div>
     <div id="kitTable"></div>
   </div>`;
   $('#kq').oninput=e=>{ f.q=e.target.value; drawKits(); };
   $('#ksit').onchange=e=>{ f.sit=e.target.value; drawKits(); };
+  $('#korig').onchange=e=>{ f.orig=e.target.value; drawKits(); };
   drawKits();
 }
 function kitRows(){
   const f=S.f.kits, q=f.q.trim().toLowerCase();
   return S.kitsCalc.filter(k=>{
+    if (f.orig && (k.origem||'Sem origem')!==f.orig) return false;
     if (f.sit==='eleg' && !k.elegivel) return false;
     if (f.sit==='prob' && k.elegivel) return false;
     if (f.sit.startsWith('v:') && !k.mp[f.sit.slice(2)]?.viavel) return false;
-    if (q && !k.kit.toLowerCase().includes(q) && !k.itens.some(i=>i.sku.toLowerCase().includes(q)||i.descricao.toLowerCase().includes(q))) return false;
+    if (q && !k.kit.toLowerCase().includes(q) && !(k.origem||'').toLowerCase().includes(q) && !k.itens.some(i=>i.sku.toLowerCase().includes(q)||i.descricao.toLowerCase().includes(q))) return false;
     return true;
   });
 }
 function drawKits(){
   const f=S.f.kits, rows=kitRows(), lim=S.P.comissao_max;
-  const cols=[['Kit','auto'],['Itens','5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7%','n']),['Situação','14%',''],['','118px','']];
+  const cols=[['Kit','auto'],['Origem','11%','hl'],['Itens','4.5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7%','n']),['Situação','14%',''],['','118px','']];
   $('#kitTit').textContent = `Kits — ${fN(rows.length)}`;
   $('#kitTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${(c[2]||'').replace('n','').trim()}" style="width:${c[1]}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${c[0]}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(k=>{ const i=S.kitsCalc.indexOf(k), aberto=!!f.open[k.kit];
-    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
+    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="hl sit">${esc(k.origem||'—')}</td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
       ${MARKETPLACES.map(mm=>{ const d=k.mp[mm.id]; return `<td class="n"><a class="lnk" style="color:${d.pct==null?'inherit':d.pct>lim?'#a32221':'#005c00'};font-weight:600" onclick="event.stopPropagation();detalheKit(${i},'${mm.id}')">${fP(d.pct)}</a> ${d.viavel?'✓':''}</td>`; }).join('')}
       <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td>
       <td class="c" onclick="event.stopPropagation()"><button class="btn sm" onclick="editarKit(${i})">Editar</button> <button class="btn sm" title="Excluir kit" onclick="excluirKit(${i})">×</button></td></tr>`;
@@ -1955,7 +1961,8 @@ async function salvarKit(){
     : (E.kit!==E.orig && S.kits.some(k=>k.kit.toLowerCase()===E.kit.toLowerCase())) ? 'Já existe um kit com esse nome.'
     : new Set(itens.map(i=>i.sku)).size!==itens.length ? 'Há SKU repetido: some as quantidades numa linha só.' : '';
   if (err){ $('#keErr').textContent=err; return; }
-  const rows = itens.map(i=>({ kit:E.kit, sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao||'', quantidade:i.quantidade, preco_sugerido:E.preco, peso:base.get(i.sku)?.peso ?? null }));
+  const origem = (E.orig && S.kits.find(k=>k.kit===E.orig)?.origem) || 'Criado na tela';
+  const rows = itens.map(i=>({ kit:E.kit, sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao||'', quantidade:i.quantidade, preco_sugerido:E.preco, peso:null, origem }));
   try{
     if (!S.local){
       const nomes=[E.kit, ...(E.orig&&E.orig!==E.kit?[E.orig]:[])];
@@ -1980,10 +1987,10 @@ function detalheKit(i, mp){
 function exportKits(){
   const rows = kitRows();
   const wb = XLSX.utils.book_new();
-  const kits = rows.map(k=>{ const o={ 'Kit':k.kit, 'Itens':k.n, 'Unidades':k.unidades, 'Preço sugerido':k.preco, 'Valor avulso':k.avulso, 'Kit vs avulso %':k.desconto==null?null:Math.round(-k.desconto*10000)/10000, 'Peso (kg)':k.peso, 'Kits possíveis':k.disponiveis, 'Elegível':k.elegivel?'Sim':'Não', 'Situação':k.problemas.join(' · ')||'Elegível' };
+  const kits = rows.map(k=>{ const o={ 'Kit':k.kit, 'Origem':k.origem||'', 'Itens':k.n, 'Unidades':k.unidades, 'Preço sugerido':k.preco, 'Valor avulso':k.avulso, 'Kit vs avulso %':k.desconto==null?null:Math.round(-k.desconto*10000)/10000, 'Peso (kg)':k.peso, 'Kits possíveis':k.disponiveis, 'Elegível':k.elegivel?'Sim':'Não', 'Situação':k.problemas.join(' · ')||'Elegível' };
     for (const mm of MARKETPLACES){ const d=k.mp[mm.id]; o[mm.nome+' - comissão estimada %']=d.pct==null?null:Math.round(d.pct*10000)/10000; o[mm.nome+' - taxa (R$)']=d.com!=null?Math.round(d.com*k.preco*100)/100:null; o[mm.nome+' - fixo (R$)']=d.fixo??null; o[mm.nome+' - frete (R$)']=d.frete??null; o[mm.nome+' - viável']=d.viavel?'Sim':'Não'; }
     return o; });
-  const comp = rows.flatMap(k=>k.itens.map(c=>({ 'Kit':k.kit, 'SKU':c.sku, 'Componente':c.produto?.name||c.descricao, 'Quantidade':c.quantidade, 'Preço Por':c.preco_unit, 'Subtotal':c.preco_unit==null?null:Math.round(c.preco_unit*c.quantidade*100)/100, 'Peso unitário (kg)':c.peso_unit, 'Estoque':c.estoque, 'Kits possíveis':c.disponiveis, 'Status no site':c.produto?c.produto.status:'Fora da base' })));
+  const comp = rows.flatMap(k=>k.itens.map(c=>({ 'Kit':k.kit, 'Origem':k.origem||'', 'SKU':c.sku, 'Componente':c.produto?.name||c.descricao, 'Quantidade':c.quantidade, 'Preço Por':c.preco_unit, 'Subtotal':c.preco_unit==null?null:Math.round(c.preco_unit*c.quantidade*100)/100, 'Peso unitário (kg)':c.peso_unit, 'Estoque':c.estoque, 'Kits possíveis':c.disponiveis, 'Status no site':c.produto?c.produto.status:'Fora da base' })));
   for (const [nome, data] of [['Kits',kits],['Composições',comp]]){ const ws=XLSX.utils.json_to_sheet(data); if(data.length){ ws['!cols']=Object.keys(data[0]).map(k=>({wch:Math.min(50,Math.max(k.length+2,...data.slice(0,200).map(r=>String(r[k]??'').length)))})); ws['!autofilter']={ref:ws['!ref']}; } XLSX.utils.book_append_sheet(wb, ws, nome); }
   XLSX.writeFile(wb, 'MATCON_Kits_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
@@ -2006,15 +2013,16 @@ async function lerKits(file){
       const i = aoa.findIndex(r=>{ const h=(r||[]).map(x=>String(x??'').trim().toLowerCase()); return h.includes('kit') && h.includes('sku') && h.includes('quantidade'); });
       if (i<0) continue;
       const hdr=aoa[i].map(x=>String(x??'').trim());
-      rows = aoa.slice(i+1).map(r=>{ const o={}; hdr.forEach((k,j)=>{ if(k) o[k]=r[j]; }); return o; }).map(normalizaKit).filter(k=>k.kit && k.sku);
+      rows = aoa.slice(i+1).map(r=>{ const o={}; hdr.forEach((k,j)=>{ if(k) o[k]=r[j]; }); return o; }).map(normalizaKit).filter(k=>k.kit && k.sku).map(k=>({...k, origem:file.name}));
       break;
     }
     if (!rows || !rows.length){ st.innerHTML='<div class="err">Não encontrei as colunas Kit, SKU e Quantidade.</div>'; return; }
     const base = new Set(S.produtos.map(p=>p.sku));
     const fora = [...new Set(rows.filter(r=>!base.has(r.sku)).map(r=>r.sku))];
     const nk = new Set(rows.map(r=>r.kit)).size;
+    const semPreco = [...new Set(rows.map(r=>r.kit))].filter(k=>!rows.some(r=>r.kit===k && r.preco_sugerido>0));
     S.kitNovo = { arquivo:file.name, rows };
-    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b>: ${fN(nk)} kits, ${fN(rows.length)} componentes.${fora.length?` <span class="err" style="display:inline">${fN(fora.length)} SKU(s) fora da base: ${fora.slice(0,10).map(esc).join(', ')}${fora.length>10?'…':''}</span>`:' Todos os componentes estão na base.'}</div>
+    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b>: ${fN(nk)} kits, ${fN(rows.length)} componentes.${fora.length?` <span class="err" style="display:inline">${fN(fora.length)} SKU(s) fora da base: ${fora.slice(0,10).map(esc).join(', ')}${fora.length>10?'…':''}</span>`:' Todos os componentes estão na base.'}${semPreco.length?`<div class="err">${fN(semPreco.length)} kit(s) sem preço sugerido: ${semPreco.slice(0,5).map(esc).join(', ')}${semPreco.length>5?'…':''}</div>`:''}<div class="muted" style="margin-top:4px">Os kits vão ficar identificados pela origem “${esc(file.name)}”.</div></div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" onclick="gravarKits()">Confirmar kits</button><button class="btn" onclick="$('#kitStatus').innerHTML=''">Cancelar</button></div>`;
   } catch(e){ console.error(e); st.innerHTML=`<div class="err">Erro ao ler a planilha: ${esc(e.message||e)}</div>`; }
 }
