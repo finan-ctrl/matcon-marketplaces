@@ -815,7 +815,7 @@ async function loadAll(){
       fetchAll('mc_anuncios','id'),
       fetchAll('mc_acoes','sku'),
       S.sb.from('mc_snapshots').select('*').order('criado_em',{ascending:false}).limit(90),
-      S.sb.from('mc_cargas').select('*').order('criado_em',{ascending:false}).limit(40),
+      S.sb.from('mc_cargas').select('*').order('criado_em',{ascending:false}).range(0,40),
       fetchAll('mc_publicacoes','id').catch(e=>{ console.warn(e); toast('Tabela mc_publicacoes não encontrada: rode o supabase_atualizacao_v2.sql', 8000); return []; })
     ]);
     S.publicacoes = publicacoes;
@@ -832,7 +832,7 @@ async function loadAll(){
     S.anuncios = anuncios;
     S.acoes = Object.fromEntries(acoes.map(a=>[acaoKey(a.sku,a.marketplace), a]));
     S.snapshots = (snaps.data||[]).reverse();
-    S.cargas = cargas.data||[];
+    S.cargas = (cargas.data||[]).slice(0,40); S.cargasMais = (cargas.data||[]).length > 40;
     recalc(); render(); aplicaPerfilNaTela();
   } catch(e){ console.error(e); toast('Erro ao carregar: ' + (e.message||e), 6000); }
   finally{ loading(false); }
@@ -1564,10 +1564,12 @@ function renderCargas(){
   </div>
   ${freteCardHTML()}
   ${kitCardHTML()}
-  <div class="card">
-    <h3>Histórico de cargas</h3><div class="sub">${S.local?'No modo local o histórico não é gravado':'Últimas 40 cargas'}</div>
+  <div class="card" id="histCard">
+    <div class="card-h"><div><h3>Histórico de cargas</h3><div class="sub">${S.local?'No modo local o histórico não é gravado':S.histAberto?'Últimas '+fN(S.cargas.length)+' cargas'+(S.cargasMais?' · há cargas mais antigas':''):'Mostrando as 5 mais recentes de '+fN(S.cargas.length)}</div></div>
+    ${S.cargas.length>5?`<button class="btn sm" onclick="S.histAberto=!S.histAberto;renderCargas();setTimeout(()=>$('#histCard').scrollIntoView({block:'nearest'}),0)">${S.histAberto?'▴ Encolher':'▾ Expandir ('+fN(S.cargas.length)+(S.cargasMais?'+':'')+')'}</button>`:''}</div>
     <table class="tbl"><thead><tr><th style="width:20%">Data</th><th style="width:18%">Tipo</th><th>Arquivo</th><th class="n" style="width:12%">Linhas</th><th class="hs" style="width:22%">Usuário</th></tr></thead>
-    <tbody>${S.cargas.map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':c.tipo==='publicacoes'?'Transmissões (marketplaces)':c.tipo==='kits'?'Kits e composições':'Preços Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
+    <tbody>${(S.histAberto?S.cargas:S.cargas.slice(0,5)).map(c=>`<tr><td>${fD(c.criado_em)}</td><td>${c.tipo==='base'?'Base de produtos':c.tipo==='publicacoes'?'Transmissões (marketplaces)':c.tipo==='kits'?'Kits e composições':'Preços Anymarket'}</td><td title="${esc(c.arquivo)}">${esc(c.arquivo)}</td><td class="n">${fN(c.linhas)}</td><td class="hs">${esc(c.usuario||'')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty">Nenhuma carga registrada.</div></td></tr>`}</tbody></table>
+    ${S.histAberto && S.cargasMais && !S.local ? `<div style="text-align:center;margin-top:10px"><button class="btn" onclick="maisCargas()">Carregar mais 40 cargas</button></div>` : ''}
   </div>`;
   if (S.fila.length) processaFila();
   $('#kitFile').onchange=e=>{ const f=e.target.files[0]; e.target.value=''; if(f) lerKits(f); };
@@ -1580,6 +1582,13 @@ function renderCargas(){
 }
 $('#fileInput').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) lerArquivos(fs); };
 
+async function maisCargas(){
+  const de = S.cargas.length;
+  const { data, error } = await S.sb.from('mc_cargas').select('*').order('criado_em',{ascending:false}).range(de, de+40);
+  if (error){ toast('Erro: '+error.message, 6000); return; }
+  S.cargas.push(...data.slice(0,40)); S.cargasMais = data.length > 40;
+  renderCargas(); setTimeout(()=>$('#histCard').scrollIntoView({block:'end'}),0);
+}
 /* ---------- Tabelas de frete com vigência ---------- */
 function canaisComFrete(){ return [['meli','Mercado Livre'],['magalu','Magalu'], ...(S.P.canais_extra||[]).map(c=>[c.id,c.nome])]; }
 function freteObj(P,id){ return id==='meli'||id==='magalu' ? P[id] : canalExtra(P,id); }
