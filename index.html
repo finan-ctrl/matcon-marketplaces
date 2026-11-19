@@ -681,12 +681,13 @@ function calculaKits(kitsRows, produtos, P){
     let peso = 0, avulso = 0, disp = Infinity, faltam = [], problemas = [];
     const comps = itens.map(i => {
       const p = base.get(i.sku);
-      const pesoU = p && p.peso != null ? p.peso : (i.peso ?? 0);
+      const pesoU = p && p.peso != null ? p.peso : null;   // peso sempre da base de produtos (Base BI)
       peso += (pesoU||0) * i.quantidade;
       const pv = p ? precoRef(p) : null; if (pv) avulso += pv * i.quantidade;
       const est = p ? (p.stock||0) : 0; disp = Math.min(disp, Math.floor(est / i.quantidade));
       if (!p) faltam.push(i.sku);
       else {
+        if (p.peso == null) problemas.push(i.sku + ' sem peso na base');
         if (String(p.status).toLowerCase() !== 'habilitado') problemas.push(i.sku + ' desabilitado');
         if (String(p.inflamavel).toLowerCase() === 'sim') problemas.push(i.sku + ' inflamável');
         if ([p.altura,p.largura,p.profundidade].some(d=>(d||0) >= P.dim_max)) problemas.push(i.sku + ' com dimensão ≥ ' + P.dim_max + ' cm');
@@ -1989,7 +1990,7 @@ function exportKits(){
 /* --- carga de kits --- */
 function kitCardHTML(){
   return `<div class="card" id="kitCard" style="margin-bottom:16px">
-    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido, Peso</span> (uma linha por componente). Kits com o mesmo nome são substituídos; os demais, inclusive os criados na tela, continuam.</div>
+    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido</span> (uma linha por componente). O peso vem da base de produtos. Kits com o mesmo nome são substituídos; os demais, inclusive os criados na tela, continuam.</div>
     <div class="filters"><label class="btn lime" style="margin:0">Escolher planilha de kits<input type="file" id="kitFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
     <span class="muted" style="font-size:12px">${S.kits.length?fN(new Set(S.kits.map(k=>k.kit)).size)+' kits carregados hoje no painel':'Nenhum kit carregado'}</span></div>
     <div id="kitStatus"></div>
