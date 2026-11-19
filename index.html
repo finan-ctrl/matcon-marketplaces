@@ -1869,12 +1869,14 @@ function kitRows(){
 }
 function drawKits(){
   const f=S.f.kits, rows=kitRows(), lim=S.P.comissao_max;
-  const cols=[['Kit','auto'],['Origem','11%','hl'],['Itens','4.5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7%','n']),['Situação','14%',''],['','118px','']];
+  f.sel ||= new Set(); [...f.sel].forEach(n=>{ if(!S.kitsCalc.some(k=>k.kit===n)) f.sel.delete(n); });
+  const todosSel = rows.length>0 && rows.every(k=>f.sel.has(k.kit));
+  const cols=[[`<input type="checkbox" class="chk" title="Selecionar todos os kits da lista" ${todosSel?'checked':''} onchange="selKitTodos(this.checked)">`,'34px','c'],['Kit','auto'],['Origem','11%','hl'],['Itens','4.5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7%','n']),['Situação','14%',''],['','118px','']];
   $('#kitTit').textContent = `Kits — ${fN(rows.length)}`;
   $('#kitTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${(c[2]||'').replace('n','').trim()}" style="width:${c[1]}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${c[0]}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(k=>{ const i=S.kitsCalc.indexOf(k), aberto=!!f.open[k.kit];
-    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="hl sit">${esc(k.origem||'—')}</td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
+    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td class="c" onclick="event.stopPropagation()"><input type="checkbox" class="chk" ${f.sel.has(k.kit)?'checked':''} onchange="selKit(${i},this.checked)"></td><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="hl sit">${esc(k.origem||'—')}</td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null||!(k.preco>0)?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
       ${MARKETPLACES.map(mm=>{ const d=k.mp[mm.id]; return `<td class="n"><a class="lnk" style="color:${d.pct==null?'inherit':d.pct>lim?'#a32221':'#005c00'};font-weight:600" onclick="event.stopPropagation();detalheKit(${i},'${mm.id}')">${fP(d.pct)}</a> ${d.viavel?'✓':''}</td>`; }).join('')}
       <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td>
       <td class="c" onclick="event.stopPropagation()"><button class="btn sm" onclick="editarKit(${i})">Editar</button> <button class="btn sm" title="Excluir kit" onclick="excluirKit(${i})">×</button></td></tr>`;
@@ -1883,7 +1885,19 @@ function drawKits(){
       <thead><tr><th>SKU</th><th>Componente</th><th class="n">Qtd.</th><th class="n">Preço Por (R$)</th><th class="n">Subtotal (R$)</th><th class="n hs">Peso un. (kg)</th><th class="n">Estoque</th><th class="n hs">Kits possíveis</th><th>Status no site</th></tr></thead>
       <tbody>${k.itens.map(c=>`<tr><td class="mono">${esc(c.sku)}</td><td>${esc(c.produto?.name||c.descricao)}</td><td class="n">${fN(c.quantidade)}</td><td class="n">${fM(c.preco_unit)}</td><td class="n">${fM(c.preco_unit==null?null:c.preco_unit*c.quantidade)}</td><td class="n hs">${fN(c.peso_unit,3)}</td><td class="n">${fN(c.estoque)}</td><td class="n hs">${fN(c.disponiveis)}</td><td>${!c.produto?'<span class="pill Inativar">Fora da base</span>':String(c.produto.status).toLowerCase()==='habilitado'?'<span class="pill ok">Habilitado</span>':`<span class="pill">${esc(c.produto.status)}</span>`}</td></tr>`).join('')}</tbody></table></td></tr>`;
     return linha+sub; }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum kit com esses filtros.</div></td></tr>`}
-  </tbody></table>`;
+  </tbody></table>
+  <div class="pager" id="kitRodape"><span>${f.sel.size?`<b>${fN(f.sel.size)}</b> kit${f.sel.size>1?'s':''} selecionado${f.sel.size>1?'s':''} · <a class="lnk" onclick="S.f.kits.sel.clear();drawKits()">limpar seleção</a>`:'Marque as caixas para excluir vários kits de uma vez'}</span>
+    <button class="btn" style="${f.sel.size?'border-color:#e34948;color:#a32221':''}" ${f.sel.size?'':'disabled'} onclick="excluirSelecionados()">Excluir selecionados${f.sel.size?' ('+fN(f.sel.size)+')':''}</button></div>`;
+}
+function selKit(i, on){ const n=S.kitsCalc[i].kit; on ? S.f.kits.sel.add(n) : S.f.kits.sel.delete(n); drawKits(); }
+function selKitTodos(on){ kitRows().forEach(k=> on ? S.f.kits.sel.add(k.kit) : S.f.kits.sel.delete(k.kit)); drawKits(); }
+async function excluirSelecionados(){
+  const nomes=[...S.f.kits.sel]; if(!nomes.length) return;
+  if(!confirm(`Excluir ${nomes.length} kit${nomes.length>1?'s':''}?\n\n`+nomes.slice(0,8).join('\n')+(nomes.length>8?'\n…':''))) return;
+  if (!S.local){
+    for (let i=0;i<nomes.length;i+=100){ const { error } = await S.sb.from('mc_kits').delete().in('kit', nomes.slice(i,i+100)); if (error){ toast('Erro: '+error.message, 6000); return; } }
+  }
+  const set=new Set(nomes); S.kits = S.kits.filter(x=>!set.has(x.kit)); S.f.kits.sel.clear(); recalc(); renderKits(); toast(`${nomes.length} kit${nomes.length>1?'s':''} excluído${nomes.length>1?'s':''}`);
 }
 /* --- criar / editar kit --- */
 function editarKit(i){
@@ -2072,7 +2086,7 @@ const PERM_SEL = {
   cargas: '#drop, [onclick^="registrarSnapshot"], #freteCard .filters, [onclick^="rmFrete"], [onclick^="gravarFrete"], #kitCard .filters, [onclick^="gravarKits"], [onclick^="rmFila"], #btnConf, [onclick^="irFrete"]',
   premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick*="novoCanal"], .icone-up',
   concluir: '[onchange^="toggleAcao"]',
-  kits: '[onclick^="editarKit"], [onclick^="excluirKit"], [onclick^="salvarKit"]'
+  kits: '[onclick^="editarKit"], [onclick^="excluirKit"], [onclick^="salvarKit"], [onchange^="selKit"], #kitRodape'
 };
 function applyPerms(root=document){
   for (const [a, sel] of Object.entries(PERM_SEL)) if (!pode(a)) root.querySelectorAll(sel).forEach(el=>el.remove());
