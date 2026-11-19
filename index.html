@@ -1821,7 +1821,7 @@ function abrirDetalhe(mp, sku){
 function renderKits(){
   const m=$('#main'), K=S.kitsCalc;
   const f = S.f.kits ||= { q:'', sit:'', open:{} };
-  if (!K.length){ m.innerHTML = head('Kits e composições','Composições de kits com preço sugerido, peso e comissão estimada por canal') + `<div class="card"><div class="empty" style="padding:56px 12px"><b>Nenhum kit carregado</b>Envie a planilha de composições na aba Cargas, no quadro “Kits e composições”.${pode('cargas')?`<br><br><button class="btn lime" onclick="goTab('cargas');setTimeout(()=>$('#kitCard')?.scrollIntoView({behavior:'smooth'}),80)">Ir para Cargas</button>`:''}</div></div>`; return; }
+  if (!K.length){ m.innerHTML = head('Kits e composições','Composições de kits com preço sugerido, peso e comissão estimada por canal') + `<div class="card"><div class="empty" style="padding:56px 12px"><b>Nenhum kit cadastrado</b>Crie um kit aqui ou envie a planilha de composições na aba Cargas, no quadro “Kits e composições”.<br><br><button class="btn pri" onclick="editarKit(-1)">+ Criar kit</button>${pode('cargas')?`<br><br><button class="btn lime" onclick="goTab('cargas');setTimeout(()=>$('#kitCard')?.scrollIntoView({behavior:'smooth'}),80)">Ir para Cargas</button>`:''}</div></div>`; return; }
   const viav = id => K.filter(k=>k.mp[id]?.viavel).length;
   m.innerHTML = head('Kits e composições', `${fN(K.length)} kits · peso do kit = soma de peso × quantidade dos componentes · comissão sobre o preço sugerido · limite de ${fP(S.P.comissao_max,0)}`) + `
   <div class="grid gk" style="margin-bottom:16px">
@@ -1830,7 +1830,7 @@ function renderKits(){
     ${MARKETPLACES.map(mm=>kpi(icoHTML(mm.id,'sm')+'Viáveis no '+esc(mm.sigla), fN(viav(mm.id)), 'Comissão estimada até '+fP(S.P.comissao_max,0))).join('')}
   </div>
   <div class="card" id="kitList">
-    <div class="card-h" style="margin-bottom:10px"><div><h3 id="kitTit"></h3><div class="sub" style="margin:0">Clique no kit para ver a composição · clique na comissão para ver o cálculo</div></div><button class="btn lime" onclick="exportKits()">Exportar para Excel</button></div>
+    <div class="card-h" style="margin-bottom:10px"><div><h3 id="kitTit"></h3><div class="sub" style="margin:0">Clique no kit para ver a composição · clique na comissão para ver o cálculo</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="editarKit(-1)">+ Criar kit</button><button class="btn lime" onclick="exportKits()">Exportar para Excel</button></div></div>
     <div class="filters">
       <input type="search" id="kq" placeholder="Buscar kit ou SKU do componente" value="${esc(f.q)}">
       <select id="ksit"><option value="">Todos os kits</option><option value="eleg" ${f.sit==='eleg'?'selected':''}>Só elegíveis</option><option value="prob" ${f.sit==='prob'?'selected':''}>Com problema</option>${MARKETPLACES.map(mm=>`<option value="v:${mm.id}" ${f.sit==='v:'+mm.id?'selected':''}>Viável no ${esc(mm.nome)}</option>`).join('')}</select>
@@ -1853,20 +1853,113 @@ function kitRows(){
 }
 function drawKits(){
   const f=S.f.kits, rows=kitRows(), lim=S.P.comissao_max;
-  const cols=[['Kit','auto'],['Itens','5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7.5%','n']),['Situação','17%','']];
+  const cols=[['Kit','auto'],['Itens','5%','n'],['Preço sugerido (R$)','8%','n'],['Valor avulso (R$)','8%','n hs'],['Kit vs avulso','7%','n hs'],['Peso (kg)','6%','n'],['Kits possíveis','6.5%','n hx'],...MARKETPLACES.map(mm=>[icoHTML(mm.id,'sm')+esc(mm.sigla),'7%','n']),['Situação','14%',''],['','118px','']];
   $('#kitTit').textContent = `Kits — ${fN(rows.length)}`;
   $('#kitTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${(c[2]||'').replace('n','').trim()}" style="width:${c[1]}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${c[0]}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(k=>{ const i=S.kitsCalc.indexOf(k), aberto=!!f.open[k.kit];
     const linha = `<tr class="kitrow" onclick="togKit(${i})"><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b></td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n hs">${fM(k.avulso)}</td><td class="n hs">${k.desconto==null?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n hx">${fN(k.disponiveis)}</td>
       ${MARKETPLACES.map(mm=>{ const d=k.mp[mm.id]; return `<td class="n"><a class="lnk" style="color:${d.pct==null?'inherit':d.pct>lim?'#a32221':'#005c00'};font-weight:600" onclick="event.stopPropagation();detalheKit(${i},'${mm.id}')">${fP(d.pct)}</a> ${d.viavel?'✓':''}</td>`; }).join('')}
-      <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td></tr>`;
+      <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td>
+      <td class="c" onclick="event.stopPropagation()"><button class="btn sm" onclick="editarKit(${i})">Editar</button> <button class="btn sm" title="Excluir kit" onclick="excluirKit(${i})">×</button></td></tr>`;
     const sub = !aberto ? '' : `<tr class="kitsub"><td colspan="${cols.length}" style="padding:4px 10px 12px 26px">
       <table class="tbl" style="background:#fff"><colgroup><col style="width:9%"><col><col style="width:6%"><col style="width:10%"><col style="width:10%"><col style="width:8%" class="hs"><col style="width:8%"><col style="width:9%" class="hs"><col style="width:12%"></colgroup>
       <thead><tr><th>SKU</th><th>Componente</th><th class="n">Qtd.</th><th class="n">Preço Por (R$)</th><th class="n">Subtotal (R$)</th><th class="n hs">Peso un. (kg)</th><th class="n">Estoque</th><th class="n hs">Kits possíveis</th><th>Status no site</th></tr></thead>
       <tbody>${k.itens.map(c=>`<tr><td class="mono">${esc(c.sku)}</td><td>${esc(c.produto?.name||c.descricao)}</td><td class="n">${fN(c.quantidade)}</td><td class="n">${fM(c.preco_unit)}</td><td class="n">${fM(c.preco_unit==null?null:c.preco_unit*c.quantidade)}</td><td class="n hs">${fN(c.peso_unit,3)}</td><td class="n">${fN(c.estoque)}</td><td class="n hs">${fN(c.disponiveis)}</td><td>${!c.produto?'<span class="pill Inativar">Fora da base</span>':String(c.produto.status).toLowerCase()==='habilitado'?'<span class="pill ok">Habilitado</span>':`<span class="pill">${esc(c.produto.status)}</span>`}</td></tr>`).join('')}</tbody></table></td></tr>`;
     return linha+sub; }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum kit com esses filtros.</div></td></tr>`}
   </tbody></table>`;
+}
+/* --- criar / editar kit --- */
+function editarKit(i){
+  const k = i>=0 ? S.kitsCalc[i] : null;
+  S.kitEd = { orig: k ? k.kit : null, kit: k ? k.kit : '', preco: k ? k.preco : null,
+    itens: k ? k.itens.map(c=>({ sku:c.sku, quantidade:c.quantidade, descricao:c.descricao })) : [{ sku:'', quantidade:1, descricao:'' }] };
+  desenhaEditorKit();
+}
+function leEditorKit(){
+  const E=S.kitEd; if(!$('#keNome')) return E;
+  E.kit=$('#keNome').value.trim(); E.preco=num($('#kePreco').value);
+  E.itens=[...document.querySelectorAll('#keItens tr')].map(tr=>({ sku:tr.querySelector('.ke-sku').value.trim(), quantidade:num(tr.querySelector('.ke-qtd').value)||0, descricao:tr.dataset.desc||'' }));
+  return E;
+}
+function kitPreviaHTML(E){
+  const base=new Map(S.produtos.map(p=>[p.sku,p]));
+  const rows = E.itens.filter(i=>i.sku).map(i=>({ kit:E.kit||'(novo kit)', sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao, quantidade:i.quantidade||0, preco_sugerido:E.preco, peso:base.get(i.sku)?.peso ?? null }));
+  const prev = rows.length ? calculaKits(rows, S.produtos.filter(p=>String(p.seller_id)===String(S.P.seller_id)), S.P)[0] : null;
+  if (!prev) return '';
+  return `<div class="mh" style="margin-top:16px">Prévia</div>
+      <table class="dt"><tbody>
+        <tr><td>Peso do kit</td><td class="v">${fN(prev.peso,3)} kg</td><td class="o">soma de peso × quantidade</td></tr>
+        <tr><td>Valor avulso</td><td class="v">${fR(prev.avulso)}</td><td class="o">${prev.desconto==null||!E.preco?'':'kit '+(prev.desconto<0?'+':'−')+fN(Math.abs(prev.desconto)*100,1)+'% em relação ao avulso'}</td></tr>
+        <tr><td>Kits possíveis pelo estoque</td><td class="v">${fN(prev.disponiveis)}</td><td class="o"></td></tr>
+        ${MARKETPLACES.map(mm=>{ const d=prev.mp[mm.id]; return `<tr><td>${icoHTML(mm.id,'sm')}Comissão estimada ${esc(mm.nome)}</td><td class="v" style="color:${d.pct==null?'inherit':d.pct>S.P.comissao_max?'#a32221':'#005c00'}">${fP(d.pct)}</td><td class="o">${d.pct==null?'informe o preço sugerido':d.viavel?'viável':'não viável'}</td></tr>`; }).join('')}
+        ${prev.problemas.length?`<tr><td colspan="3" style="color:#a32221">${esc(prev.problemas.join(' · '))}</td></tr>`:''}
+      </tbody></table>`;
+}
+function kitInfoCells(it){
+  const p = S.produtos.find(x=>x.sku===it.sku);
+  return [`<td>${p?esc(p.name):it.sku?`<span class="err" style="display:inline">${it.descricao?esc(it.descricao)+' · ':''}SKU não está na base</span>`:'<span class="muted">digite ou escolha o SKU</span>'}</td>`,
+    `<td class="n">${p?fM(precoRef(p)):'—'}</td><td class="n">${p&&p.peso!=null?fN(p.peso,3):'—'}</td><td class="n">${p?fN(p.stock):'—'}</td>`];
+}
+/* atualiza só a prévia e as informações das linhas, sem recriar os campos (não perde o clique em Salvar) */
+function atualizaEditorKit(){
+  const E=leEditorKit();
+  document.querySelectorAll('#keItens tr').forEach((tr,j)=>{
+    const [a,b]=kitInfoCells(E.itens[j]);
+    tr.querySelector('.ke-nome').outerHTML = a.replace('<td','<td class="ke-nome"');
+    tr.querySelectorAll('.ke-info').forEach(td=>td.remove());
+    const tmp=document.createElement('tbody'); tmp.innerHTML='<tr>'+b.replace(/<td class="n"/g,'<td class="n ke-info"')+'</tr>';
+    const ref=tr.querySelector('.ke-rm'); [...tmp.firstChild.children].forEach(td=>tr.insertBefore(td, ref));
+  });
+  $('#kePrev').innerHTML = kitPreviaHTML(E);
+}
+function desenhaEditorKit(foco){
+  const E=S.kitEd;
+  if (!$('#skusList')){ const dl=document.createElement('datalist'); dl.id='skusList'; dl.innerHTML=S.produtos.filter(p=>String(p.seller_id)===String(S.P.seller_id)).map(p=>`<option value="${esc(p.sku)}">${esc(p.name)}</option>`).join(''); document.body.appendChild(dl); }
+  const inp='border:1px solid var(--line);border-radius:8px;padding:6px 8px;width:100%';
+  modal(`<h2>${E.orig?'Editar kit':'Criar kit'}</h2>
+    <div class="form-grid" style="grid-template-columns:2fr 1fr;margin:10px 0 14px">
+      <div class="fld"><label>Nome do kit</label><input id="keNome" value="${esc(E.kit)}" placeholder="Ex.: Kit Pedreiro Básico" style="${inp}"></div>
+      <div class="fld"><label>Preço sugerido (R$)</label><input id="kePreco" type="number" step="0.01" value="${E.preco??''}" oninput="atualizaEditorKit()" style="${inp}"></div>
+    </div>
+    <div class="mh">Componentes</div>
+    <table class="tbl"><colgroup><col style="width:17%"><col><col style="width:11%"><col style="width:13%"><col style="width:11%"><col style="width:10%"><col style="width:44px"></colgroup>
+      <thead><tr><th>SKU</th><th>Produto</th><th class="n">Qtd.</th><th class="n">Preço Por (R$)</th><th class="n">Peso un. (kg)</th><th class="n">Estoque</th><th></th></tr></thead>
+      <tbody id="keItens">${E.itens.map((it,j)=>{ const [a,b]=kitInfoCells(it); return `<tr data-desc="${esc(it.descricao||'')}">
+        <td><input class="ke-sku" list="skusList" value="${esc(it.sku)}" placeholder="SKU" oninput="atualizaEditorKit()" id="sku${j}" style="${inp};font-family:ui-monospace,monospace;font-size:12px"></td>
+        ${a.replace('<td','<td class="ke-nome"')}
+        <td><input class="ke-qtd" type="number" min="1" step="1" value="${it.quantidade||1}" oninput="atualizaEditorKit()" id="qtd${j}" style="${inp};text-align:right"></td>
+        ${b.replace(/<td class="n"/g,'<td class="n ke-info"')}
+        <td class="c ke-rm"><button class="btn sm" title="Remover componente" onclick="leEditorKit();S.kitEd.itens.splice(${j},1);desenhaEditorKit()">×</button></td></tr>`; }).join('')}</tbody></table>
+    <button class="btn sm" style="margin-top:8px" onclick="leEditorKit();S.kitEd.itens.push({sku:'',quantidade:1,descricao:''});desenhaEditorKit('sku${E.itens.length}')">+ Componente</button>
+    <div id="kePrev">${kitPreviaHTML(E)}</div>
+    <div class="err" id="keErr" style="margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px"><button class="btn lime" onclick="salvarKit()">Salvar kit</button></div>`);
+  if (foco){ const el=document.getElementById(foco); if(el){ el.focus(); } }
+}
+async function salvarKit(){
+  const E=leEditorKit(), base=new Map(S.produtos.map(p=>[p.sku,p]));
+  const itens=E.itens.filter(i=>i.sku);
+  const err = !E.kit ? 'Dê um nome ao kit.' : !(E.preco>0) ? 'Informe o preço sugerido.' : !itens.length ? 'Inclua pelo menos um componente.'
+    : itens.some(i=>!(i.quantidade>0)) ? 'A quantidade precisa ser maior que zero.'
+    : (E.kit!==E.orig && S.kits.some(k=>k.kit.toLowerCase()===E.kit.toLowerCase())) ? 'Já existe um kit com esse nome.'
+    : new Set(itens.map(i=>i.sku)).size!==itens.length ? 'Há SKU repetido: some as quantidades numa linha só.' : '';
+  if (err){ $('#keErr').textContent=err; return; }
+  const rows = itens.map(i=>({ kit:E.kit, sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao||'', quantidade:i.quantidade, preco_sugerido:E.preco, peso:base.get(i.sku)?.peso ?? null }));
+  try{
+    if (!S.local){
+      const nomes=[E.kit, ...(E.orig&&E.orig!==E.kit?[E.orig]:[])];
+      const { error:e1 } = await S.sb.from('mc_kits').delete().in('kit', nomes); if (e1) throw e1;
+      const { error:e2 } = await S.sb.from('mc_kits').insert(rows); if (e2) throw e2;
+    }
+    S.kits = [...S.kits.filter(k=>k.kit!==E.kit && k.kit!==E.orig), ...rows];
+    $('#modalHost').innerHTML=''; recalc(); S.f.kits ||= { q:'', sit:'', open:{} }; S.f.kits.open[E.kit]=true; renderKits(); toast(E.orig?'Kit atualizado':'Kit criado');
+  } catch(e){ console.error(e); $('#keErr').textContent='Erro ao salvar: '+(e.message||e); }
+}
+async function excluirKit(i){
+  const k=S.kitsCalc[i]; if(!confirm('Excluir o kit “'+k.kit+'”?')) return;
+  if (!S.local){ const { error } = await S.sb.from('mc_kits').delete().eq('kit', k.kit); if (error){ toast('Erro: '+error.message, 6000); return; } }
+  S.kits = S.kits.filter(x=>x.kit!==k.kit); recalc(); renderKits(); toast('Kit excluído');
 }
 function togKit(i){ const k=S.kitsCalc[i]; S.f.kits.open[k.kit]=!S.f.kits.open[k.kit]; drawKits(); }
 function detalheKit(i, mp){
@@ -1887,7 +1980,7 @@ function exportKits(){
 /* --- carga de kits --- */
 function kitCardHTML(){
   return `<div class="card" id="kitCard" style="margin-bottom:16px">
-    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido, Peso</span> (uma linha por componente). Substitui todos os kits.</div>
+    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido, Peso</span> (uma linha por componente). Kits com o mesmo nome são substituídos; os demais, inclusive os criados na tela, continuam.</div>
     <div class="filters"><label class="btn lime" style="margin:0">Escolher planilha de kits<input type="file" id="kitFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
     <span class="muted" style="font-size:12px">${S.kits.length?fN(new Set(S.kits.map(k=>k.kit)).size)+' kits carregados hoje no painel':'Nenhum kit carregado'}</span></div>
     <div id="kitStatus"></div>
@@ -1921,23 +2014,24 @@ async function gravarKits(){
     if (!S.local){
       const { data:c, error:e1 } = await S.sb.from('mc_cargas').insert({ tipo:'kits', arquivo:N.arquivo, linhas:N.rows.length, usuario:S.user?.email||null }).select().single();
       if (e1) throw e1;
+      const nomes = [...new Set(N.rows.map(r=>r.kit))];
+      for (let i=0;i<nomes.length;i+=100){ const { error:e2 } = await S.sb.from('mc_kits').delete().in('kit', nomes.slice(i,i+100)); if (e2) throw e2; }
       const { error } = await S.sb.from('mc_kits').insert(N.rows.map(r=>({...r, carga_id:c.id})));
       if (error) throw error;
-      const { error:e2 } = await S.sb.from('mc_kits').delete().neq('carga_id', c.id);
-      if (e2) throw e2;
       S.cargas.unshift(c);
     } else S.cargas.unshift({ tipo:'kits', arquivo:N.arquivo, linhas:N.rows.length, criado_em:new Date().toISOString() });
-    S.kits = N.rows; S.kitNovo=null; recalc();
+    const nomesN = new Set(N.rows.map(r=>r.kit));
+    S.kits = [...S.kits.filter(k=>!nomesN.has(k.kit)), ...N.rows]; S.kitNovo=null; recalc();
     toast('Kits gravados'); goTab('kits');
   } catch(e){ console.error(e); toast('Erro ao gravar kits: '+(e.message||e), 7000); }
 }
 
 /* ======================= NÍVEIS DE ACESSO ======================= */
 const TELAS = [['geral','Visão geral'],['canais','Telas dos canais'],['catalogo','Catálogo'],['kits','Kits e composições'],['premissas','Premissas'],['cargas','Cargas'],['acessos','Acessos']];
-const ACOES_P = [['cargas','Subir arquivos (base, transmissões, frete, kits)'],['premissas','Editar premissas e canais'],['concluir','Marcar ações como concluídas'],['exportar','Exportar para Excel'],['acessos','Gerenciar usuários e perfis']];
+const ACOES_P = [['cargas','Subir arquivos (base, transmissões, frete, kits)'],['kits','Criar e editar kits'],['premissas','Editar premissas e canais'],['concluir','Marcar ações como concluídas'],['exportar','Exportar para Excel'],['acessos','Gerenciar usuários e perfis']];
 const PERFIS_PADRAO = [
   { nome:'Administrador', telas:TELAS.map(t=>t[0]), acoes:ACOES_P.map(a=>a[0]) },
-  { nome:'Operador', telas:['geral','canais','catalogo','kits','premissas','cargas'], acoes:['cargas','concluir','exportar'] },
+  { nome:'Operador', telas:['geral','canais','catalogo','kits','premissas','cargas'], acoes:['cargas','kits','concluir','exportar'] },
   { nome:'Consulta', telas:['geral','canais','catalogo','kits'], acoes:['exportar'] }
 ];
 const telaDe = id => MPN[id] || id==='outros' ? 'canais' : id;
@@ -1959,7 +2053,8 @@ const PERM_SEL = {
   exportar: '[onclick^="export"]',
   cargas: '#drop, [onclick^="registrarSnapshot"], #freteCard .filters, [onclick^="rmFrete"], [onclick^="gravarFrete"], #kitCard .filters, [onclick^="gravarKits"], [onclick^="rmFila"], #btnConf, [onclick^="irFrete"]',
   premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick*="novoCanal"], .icone-up',
-  concluir: '[onchange^="toggleAcao"]'
+  concluir: '[onchange^="toggleAcao"]',
+  kits: '[onclick^="editarKit"], [onclick^="excluirKit"], [onclick^="salvarKit"]'
 };
 function applyPerms(root=document){
   for (const [a, sel] of Object.entries(PERM_SEL)) if (!pode(a)) root.querySelectorAll(sel).forEach(el=>el.remove());
