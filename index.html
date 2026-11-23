@@ -927,7 +927,7 @@ function renderGeral(){
         <colgroup><col style="width:17%"><col style="width:11%"><col style="width:10%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:8%"><col class="hs" style="width:11%"></colgroup><thead><tr><th>Marketplace</th><th class="n">Cadastrados</th><th class="n">Publicados</th><th class="n">Inativar</th><th class="n">Preço dif.</th><th class="n">Ativar</th><th class="n">Subir</th><th class="n">Final</th><th class="n hs">Pendentes</th></tr></thead>
         <tbody>
           <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
-          ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${icoHTML(x.id,'sm')}${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','acoes')`,'Ver todas as ações '+x.nome)}</td><td class="n">${L(fN(r.cadastrados),'cad','Cadastrados')}</td><td class="n">${L(fN(r.ativos),'ativos','Publicados')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${temPreco(x.id)?L(fN(r.Dif),'Dif','Preço diferente'):'<span class="muted" title="Envie o export de preços do Anymarket para comparar">—</span>'}</td><td class="n">${L(fN(r.Ativar),'Ativar','Ativar anúncio')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final projetado')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
+          ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${icoHTML(x.id,'sm')}${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','cad')`,'Ver os SKUs cadastrados no '+x.nome)}</td><td class="n">${L(fN(r.cadastrados),'cad','Cadastrados')}</td><td class="n">${L(fN(r.ativos),'ativos','Publicados')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${temPreco(x.id)?L(fN(r.Dif),'Dif','Preço diferente'):'<span class="muted" title="Envie o export de preços do Anymarket para comparar">—</span>'}</td><td class="n">${L(fN(r.Ativar),'Ativar','Ativar anúncio')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final projetado')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
           ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· sem regras</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="7" style="text-align:left" class="muted">Canal sem regras de comissão · ${lk('<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
         </tbody>
       </table>
@@ -1008,7 +1008,7 @@ function renderMP(mp){
   const m=$('#main');
   if (!S.res.linhas.length){ m.innerHTML = head(MPN[mp],'Gestão do sortimento') + semDados(); return; }
   const r=S.sum.mp[mp];
-  const f = S.f[mp] ||= { q:'', st:'acoes', pub:'', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
+  const f = S.f[mp] ||= { q:'', st:'todos', pub:'cad', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
   f.pub ??= '';
   const cx = canalExtra(S.P, mp);
   const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : mp==='magalu' ? `Comissão ${fP(S.P.magalu.com)} + frete por peso` : `Comissão ${fP(cx?.com)}${cx?.fixo?' + fixo '+fR(cx.fixo):''}${(cx?.faixas_peso||[]).length?' + frete por peso':''}`;
@@ -1058,14 +1058,14 @@ function renderMP(mp){
   </div>`;
   $('#fq').oninput = e => { f.q=e.target.value; f.page=0; drawMPTable(mp); };
   $('#fst').onchange = e => { f.st=e.target.value; f.page=0; renderMP(mp); };
-  $('#fpub').onchange = e => { f.pub=e.target.value; if (f.pub && f.st==='acoes') f.st='todos'; f.page=0; renderMP(mp); };
+  $('#fpub').onchange = e => { f.pub=e.target.value; if (f.pub && f.st!=='todos') f.st='todos'; f.page=0; renderMP(mp); };
   $('#fdep').onchange = e => { f.dep=e.target.value; f.page=0; drawMPTable(mp); };
   $('#fpend').onchange = e => { f.pend=e.target.checked; f.page=0; drawMPTable(mp); };
   $('#foc').onchange = e => { f.oc=e.target.value; f.page=0; drawMPTable(mp); };
   drawMPCharts(mp); drawMPTable(mp);
 }
 const ST_OPTS = [['acoes','Todas as ações'],['Inativar','Inativar'],['Dif','Preço diferente'],['Ativar','Ativar anúncio'],['Subir','Subir'],['manter','Manter'],['final','Final projetado'],['inviavel','Inviável (comissão alta)'],['todos','Todos os SKUs']];
-const PUB_OPTS = [['','Qualquer publicação'],['cad','Cadastrado (qualquer status)'],['nc','Não cadastrado'],['Ativo','Publicado (Ativo)'],['Sem estoque','Sem estoque'],['Pausado','Pausado'],['Não publicado','Não publicado'],['Finalizado','Finalizado'],['erro','Com erro de transmissão']];
+const PUB_OPTS = [['','Qualquer publicação'],['cad','Cadastrados no canal'],['nc','Não cadastrado'],['Ativo','Publicado (Ativo)'],['Sem estoque','Sem estoque'],['Pausado','Pausado'],['Não publicado','Não publicado'],['Finalizado','Finalizado'],['erro','Com erro de transmissão']];
 function ocOptions(mp){
   const o = MARKETPLACES.filter(m=>m.id!==mp);
   return [['','Todos os canais'],['algum','Publicado em outro canal'],['nenhum','Só neste canal'],
@@ -1121,10 +1121,10 @@ function verErro(a){
   $('#modalHost').innerHTML = `<div class="overlay" onclick="if(event.target===this)this.remove()"><div class="modal" style="max-width:640px"><h2>Mensagem de erro do Anymarket</h2><p style="white-space:pre-wrap;color:var(--ink)">${esc(a.dataset.e)}</p><div class="act"><button class="btn pri" onclick="this.closest('.overlay').remove()">Fechar</button></div></div></div>`;
 }
 function setMPf(mp,k,v){ const f=S.f[mp]; const off = f[k]===v;
-  f[k] = off ? (k==='st'?'acoes':'') : v;
-  // cartão de publicação mostra todos os SKUs naquele status; cartão de ação limpa o filtro de publicação
-  if (k==='pub') f.st = off ? 'acoes' : 'todos';
-  if (k==='st' && !off) f.pub = '';
+  // desmarcar um cartão volta ao padrão: todos os SKUs cadastrados no canal
+  if (off){ f.st='todos'; f.pub='cad'; }
+  else if (k==='pub'){ f.pub=v; f.st='todos'; }   // cartão de publicação: todos os SKUs naquele status
+  else { f.st=v; f.pub=''; }                      // cartão de ação: limpa o filtro de publicação
   f.page=0; renderMP(mp); setTimeout(()=>$('#mpList')?.scrollIntoView({behavior:'smooth',block:'start'}),40); }
 function drawMPCharts(mp){
   const r=S.sum.mp[mp], f=S.f[mp];
@@ -1238,7 +1238,7 @@ function drawMPTable(mp){
   }).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length, f.page, pages, `pgMP('${mp}',`)}`;
   const stTxt = Object.fromEntries(ST_OPTS)[f.st] || f.st, pubTxt = f.pub ? Object.fromEntries(PUB_OPTS)[f.pub] : '';
-  $('#mpListTit').textContent = f.q.trim() ? `${MPN[mp]} · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)} SKUs` : `${MPN[mp]} · ${stTxt}${pubTxt?' · '+pubTxt.toLowerCase():''}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
+  $('#mpListTit').textContent = f.q.trim() ? `${MPN[mp]} · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)} SKUs` : `${MPN[mp]} · ${f.st==='todos'&&pubTxt ? pubTxt : stTxt+(pubTxt?' · '+pubTxt.toLowerCase():'')}${f.pend?' · só pendentes':''}${f.dep?' · '+f.dep:''}${f.oc?' · '+ocOptions(mp).find(o=>o[0]===f.oc)[1].toLowerCase():''} — ${fN(rows.length)} SKUs`;
   ['#fst','#fpub','#fdep','#foc','#fpend'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
   $('#mpTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawMPTable(mp); });
 }
@@ -1372,7 +1372,7 @@ function drawCat(){
   <tbody>${pg.map(r=>`<tr><td class="mono">${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="hl">${esc(r.marca)}</td><td class="n hl">${!r.l?'':r.peso==null?'<span class="muted">vazio</span>':fN(r.peso,3)}</td><td class="n hl">${!r.l?'':r.dim==null?'<span class="muted">vazio</span>':fN(r.dim,1)}</td><td class="n hm">${fM(r.pde)}</td><td class="n">${fM(r.ppor)}</td><td class="n hm">${fN(r.stock)}</td>${MARKETPLACES.map(m=>`<td>${pubHTML(r.mpx[m.id])}</td>`).join('')}<td>${r.mot?`<span class="pill ${r.l?'':'Inativar'}">${esc(r.mot)}</span>`:`<span class="pill ok">Elegível</span>`}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
   ${pagerHTML(rows.length,f.page,pages,'pgCat(')}`;
   const canTxt = f.can ? ' · ' + (catCanOpts().find(o=>o[0]===f.can)||['',''])[1].toLowerCase() : '';
-  $('#catListTit').textContent = f.q.trim() ? `SKUs do catálogo · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)}` : `SKUs do catálogo${canTxt} — ${fN(rows.length)}`;
+  $('#catListTit').textContent = f.q.trim() ? `SKUs do catálogo · busca “${f.q.trim()}” em todos os SKUs — ${fN(rows.length)}` : (()=>{ const nf=rows.filter(r=>!r.l).length; return `SKUs do catálogo${canTxt} — ${fN(rows.length)}${nf&&!canTxt&&!f.el&&!f.mot&&!f.dep?` (${fN(rows.length-nf)} do seller + ${fN(nf)} fora da base)`:''}`; })();
   ['#cel','#cmot','#cdep','#ccan'].forEach(id=>{ const el=$(id); if(el){ el.disabled=!!f.q.trim(); el.title=f.q.trim()?'Durante a busca, a lista mostra todos os SKUs':''; } });
   $('#catTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=k.startsWith('c_')?-1:1; } drawCat(); });
 }
