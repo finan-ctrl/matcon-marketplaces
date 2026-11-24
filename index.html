@@ -181,6 +181,14 @@ main{padding:20px 24px 48px;max-width:1840px;margin:0 auto}
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(135deg,#f4f5f1 0%,#eef5da 100%)}
 .login .modal{max-width:380px}
 .login img{height:34px;margin-bottom:18px}
+.login .pedir{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);text-align:center;font-size:13.5px;color:var(--mut)}
+.login textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;min-height:64px;resize:vertical}
+.login .ok{background:#eef5da;border-radius:10px;padding:14px;font-size:14px;line-height:1.5;color:var(--ink)}
+.login .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:420px){.login .row2{grid-template-columns:1fr}}
+.login.pedindo .modal{max-width:460px}
+.sol-b{width:176px}.sol-a{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}@media(max-width:640px){.sol-t,.sol-t tbody,.sol-t tr,.sol-t td{display:block;width:auto!important}.sol-t colgroup,.sol-t thead{display:none}.sol-t tr{padding:10px 0;border-bottom:1px solid var(--line)}.sol-t td{border:0!important;padding:3px 0!important;text-align:left!important}.sol-t td.hs{display:none}.sol-a{justify-content:flex-start}}
+#nav .nb{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#e34948;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
 .err{color:#a32221;font-size:12.5px;min-height:18px}
 #toast{position:fixed;bottom:20px;right:20px;background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:60;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;max-width:calc(100vw - 40px)}
 #toast.on{opacity:1;transform:none}
@@ -198,11 +206,27 @@ main{padding:20px 24px 48px;max-width:1840px;margin:0 auto}
   <div class="modal">
     <img src="data:image/webp;base64,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" alt="MATCON.casa">
     <h2>Gestão de Marketplaces</h2>
+    <div id="lgEntrar">
     <p>Entre com seu usuário para acessar o painel.</p>
     <div class="fld"><label>E-mail</label><input id="lgEmail" type="email" autocomplete="username"></div>
     <div class="fld"><label>Senha</label><input id="lgPass" type="password" autocomplete="current-password"></div>
     <div class="err" id="lgErr"></div>
     <div class="act"><button class="btn" onclick="openConfig()">Conexão</button><button class="btn pri" id="lgBtn" onclick="doLogin()">Entrar</button></div>
+    <div class="pedir">Ainda não tem acesso? <a class="lnk" onclick="mostraPedido(true)"><b>Solicitar acesso</b></a></div>
+    </div>
+    <div id="lgPedir" class="hidden">
+    <div id="spForm">
+    <p>Preencha os dados abaixo. Você já cria sua senha agora, e o administrador do painel libera o acesso.</p>
+    <div class="fld"><label>Nome completo</label><input id="spNome" autocomplete="name"></div>
+    <div class="fld"><label>E-mail</label><input id="spEmail" type="email" autocomplete="email"></div>
+    <div class="fld"><label>Empresa / setor <span class="muted">(opcional)</span></label><input id="spSetor"></div>
+    <div class="row2"><div class="fld"><label>Crie uma senha</label><input id="spPass" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres"></div><div class="fld"><label>Repita a senha</label><input id="spPass2" type="password" autocomplete="new-password"></div></div>
+    <div class="fld"><label>Para que você precisa do acesso? <span class="muted">(opcional)</span></label><textarea id="spMotivo" maxlength="500"></textarea></div>
+    <div class="err" id="spErr"></div>
+    <div class="act"><button class="btn" onclick="mostraPedido(false)">Voltar</button><button class="btn pri" id="spBtn" onclick="pedirAcesso()">Enviar solicitação</button></div>
+    </div>
+    <div id="spOk" class="hidden"><div class="ok" id="spOkTxt"></div><div class="act"><button class="btn pri" onclick="mostraPedido(false)">Voltar para o login</button></div></div>
+    </div>
   </div>
 </div>
 
@@ -789,13 +813,59 @@ async function doLogin(){
   if (error){
     const m = error.message==='Invalid login credentials' ? 'e-mail ou senha incorretos.'
       : /invalid api key/i.test(error.message) ? 'a chave do Supabase (anon key) está errada ou é de outro projeto. Clique em Conexão e confira.'
-      : /email not confirmed/i.test(error.message) ? 'usuário ainda não confirmado. No Supabase, recrie o usuário marcando Auto Confirm User.'
+      : /email not confirmed/i.test(error.message) ? 'e-mail ainda não confirmado. Clique no link de confirmação que chegou no seu e-mail (veja o spam) ou peça ao administrador para confirmar seu usuário no Supabase.'
       : error.message;
     $('#lgErr').textContent = 'Não foi possível entrar: ' + m; return;
   }
   S.user = data.user; showApp(); await loadAll();
 }
 $('#lgPass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+function mostraPedido(on){
+  $('#lgEntrar').classList.toggle('hidden', on); $('#lgPedir').classList.toggle('hidden', !on); $('#loginView').classList.toggle('pedindo', on);
+  $('#spForm').classList.remove('hidden'); $('#spOk').classList.add('hidden'); $('#spErr').textContent='';
+  if (on){ if ($('#lgEmail').value && !$('#spEmail').value) $('#spEmail').value=$('#lgEmail').value; setTimeout(()=>$('#spNome').focus(),50); }
+  else setTimeout(()=>$('#lgEmail').focus(),50);
+}
+async function pedirAcesso(){
+  const nome=$('#spNome').value.trim(), email=$('#spEmail').value.trim().toLowerCase(), setor=$('#spSetor').value.trim(), motivo=$('#spMotivo').value.trim();
+  const pass=$('#spPass').value, pass2=$('#spPass2').value, err=t=>{ $('#spErr').textContent=t; };
+  if (nome.length<2) return err('Informe seu nome.');
+  if (!/^\S+@\S+\.\S+$/.test(email)) return err('Informe um e-mail válido.');
+  if (pass.length<6) return err('A senha precisa ter pelo menos 6 caracteres.');
+  if (pass!==pass2) return err('As duas senhas não são iguais.');
+  err(''); $('#spBtn').disabled=true; $('#spBtn').textContent='Enviando…';
+  try{
+    // 1) cria o login (e-mail + senha). Sem perfil, a pessoa não vê nada até ser aprovada.
+    let temLogin=false, jaTinha=false, confirmar=false;
+    const su = await S.sb.auth.signUp({ email, password:pass, options:{ data:{ nome }, emailRedirectTo: location.href.split('#')[0] } });
+    if (su.error){
+      const m=su.error.message||'';
+      if (/already|registered|exists/i.test(m)){ temLogin=true; jaTinha=true; }
+      else if (/signups? not allowed|signup.*disabled/i.test(m)){ temLogin=false; }
+      else if (/password/i.test(m)) return err('Senha não aceita: '+m);
+      else if (/rate limit|too many/i.test(m)) return err('Muitas tentativas seguidas. Espere alguns minutos e tente de novo.');
+      else return err('Não foi possível enviar: '+m);
+    } else {
+      temLogin=true;
+      if (su.data?.user && Array.isArray(su.data.user.identities) && su.data.user.identities.length===0) jaTinha=true;
+      confirmar = !su.data?.session && !jaTinha;
+    }
+    // 2) registra o pedido para o administrador
+    const ins = await S.sb.from('mc_solicitacoes').insert({ email, nome, setor:setor||null, motivo:motivo||null, tem_login:temLogin });
+    if (su.data?.session) await S.sb.auth.signOut();
+    if (ins.error){
+      if (ins.error.code==='23505') return err('Já existe um pedido pendente para este e-mail. Aguarde o administrador liberar.');
+      if (/mc_solicitacoes|relation|schema cache/i.test(ins.error.message)) return err('O painel ainda não está pronto para receber pedidos (falta rodar a atualização v4 no Supabase). Avise o administrador.');
+      return err('Não foi possível enviar: '+ins.error.message);
+    }
+    $('#spOkTxt').innerHTML = `<b>Pedido enviado!</b><br>` +
+      (jaTinha ? `Este e-mail já tinha login. Assim que o administrador aprovar, entre com a senha que você já usava.`
+       : temLogin ? `Assim que o administrador aprovar, entre com <b>${esc(email)}</b> e a senha que você acabou de criar.` + (confirmar ? `<br><br>Antes disso, confirme seu e-mail pelo link que enviamos (veja também o spam).` : '')
+       : `O administrador vai criar seu login e avisar você quando estiver liberado.`);
+    $('#spForm').classList.add('hidden'); $('#spOk').classList.remove('hidden');
+    $('#lgEmail').value=email; $('#spPass').value=$('#spPass2').value='';
+  } finally { $('#spBtn').disabled=false; $('#spBtn').textContent='Enviar solicitação'; }
+}
 async function doLogout(){ if(S.sb) await S.sb.auth.signOut(); location.reload(); }
 
 async function fetchAll(table, order){
@@ -829,6 +899,7 @@ async function loadAll(){
       S.sb.from('mc_perfis').select('*').then(r=>{ if(r.error) throw r.error; return r.data; }).catch(e=>{ console.warn(e); S.semV3=true; return []; })
     ]);
     S.kits = kits; S.usuarios = usuarios; S.perfis = perfis;
+    await carregaSolicitacoes();
     if (S.semV3) toast('Rode o supabase_atualizacao_v3.sql para ativar Kits e Acessos', 8000);
     definePermissoes();
     if (prem.data?.dados) S.P = mergeP(prem.data.dados);
@@ -864,7 +935,8 @@ function pendentes(mp){
 function buildNav(){
   const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['kits','Kits e composições'], ['premissas','Premissas'], ['cargas','Cargas'], ['acessos','Acessos']].filter(([id])=>veTela(telaDe(id)));
   if (!tabs.some(t=>t[0]===S.tab) && !(S.tab==='outros' && veTela('canais'))) S.tab = tabs[0]?.[0] || 'geral';
-  $('#nav').innerHTML = tabs.map(([id,t])=>`<button data-tab="${id}" class="${S.tab===id?'on':''}">${MPN[id]?icoHTML(id,'sm'):''}${esc(t)}</button>`).join('');
+  const nPed = pode('acessos') ? pendentesAcesso().length : 0;
+  $('#nav').innerHTML = tabs.map(([id,t])=>`<button data-tab="${id}" class="${S.tab===id?'on':''}">${MPN[id]?icoHTML(id,'sm'):''}${esc(t)}${id==='acessos'&&nPed?`<span class="nb" title="${nPed} pedido${nPed>1?'s':''} de acesso aguardando">${nPed}</span>`:''}</button>`).join('');
   document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
     if (S.tab==='premissas' && b.dataset.tab!=='premissas') S.Pd = null;
     S.tab=b.dataset.tab; document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b)); render(); window.scrollTo(0,0);
@@ -2067,10 +2139,20 @@ const PERFIS_PADRAO = [
   { nome:'Consulta', telas:['geral','canais','catalogo','kits'], acoes:['exportar'] }
 ];
 const telaDe = id => MPN[id] || id==='outros' ? 'canais' : id;
+async function carregaSolicitacoes(){
+  if (S.local || S.semV3) return;
+  const [sol, ex] = await Promise.all([
+    S.sb.from('mc_solicitacoes').select('*').order('criado_em',{ascending:false}).limit(300),
+    S.sb.rpc('mc_existem_usuarios')
+  ]);
+  S.semV4 = !!sol.error; S.solicitacoes = sol.error ? [] : (sol.data||[]);
+  S.existemUsuarios = ex.error ? null : !!ex.data;
+}
+const pendentesAcesso = () => (S.solicitacoes||[]).filter(x=>x.status==='pendente');
 function definePermissoes(){
   const tudo = { perfil:'Administrador', telas:new Set(TELAS.map(t=>t[0])), acoes:new Set(ACOES_P.map(a=>a[0])), setup:false, sem:false };
   if (S.local || S.semV3){ S.perm = tudo; return; }
-  if (!S.usuarios.length){ S.perm = { ...tudo, setup:true }; return; }
+  if (!S.usuarios.length && !S.existemUsuarios){ S.perm = { ...tudo, setup:true }; return; }
   const email = String(S.user?.email||'').toLowerCase();
   const u = S.usuarios.find(x=>String(x.email).toLowerCase()===email);
   const p = u && (S.perfis.find(x=>x.nome===u.perfil) || PERFIS_PADRAO.find(x=>x.nome===u.perfil));
@@ -2103,9 +2185,10 @@ function renderAcessos(){
   const ed = pode('acessos');
   m.innerHTML = head('Acessos','Quem entra no painel e o que cada perfil vê e pode fazer') + `
   ${S.perm.setup?`<div class="note" style="margin-bottom:14px"><b>Acessos ainda não configurados:</b> enquanto não houver nenhum usuário na lista, todos os logins têm acesso total. Comece se adicionando como Administrador.</div>`:''}
+  ${solicitacoesHTML(perfis, ed)}
   <div class="card" style="margin-bottom:16px">
-    <h3>Usuários</h3><div class="sub">O login (e-mail e senha) é criado no Supabase em Authentication › Users. Aqui você define o perfil de cada e-mail.</div>
-    <table class="tbl"><colgroup><col style="width:36%"><col style="width:26%"><col style="width:24%"><col style="width:14%"></colgroup>
+    <h3>Usuários</h3><div class="sub">Quem está nesta lista entra no painel com o perfil escolhido. O login (e-mail e senha) a pessoa cria em “Solicitar acesso”, na tela de entrada, ou você cria no Supabase em Authentication › Users.</div>
+    <table class="tbl sol-t"><colgroup><col style="width:36%"><col style="width:26%"><col style="width:24%"><col style="width:14%"></colgroup>
     <thead><tr><th>E-mail</th><th>Nome</th><th>Perfil</th><th></th></tr></thead>
     <tbody>${S.usuarios.map((u,i)=>`<tr><td>${esc(u.email)}${String(u.email).toLowerCase()===String(S.user?.email||'').toLowerCase()?' <span class="muted">(você)</span>':''}</td><td>${esc(u.nome||'')}</td><td>${ed?`<select onchange="salvaUsuario(${i},this.value)">${perfis.map(p=>`<option ${p.nome===u.perfil?'selected':''}>${esc(p.nome)}</option>`).join('')}</select>`:esc(u.perfil)}</td><td class="c">${ed?`<button class="btn sm" onclick="rmUsuario(${i})">Remover</button>`:''}</td></tr>`).join('') || `<tr><td colspan="4"><div class="empty">Nenhum usuário cadastrado.</div></td></tr>`}
     ${ed?`<tr><td><input id="nuEmail" type="email" placeholder="email@empresa.com.br" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px" value="${S.perm.setup?esc(S.user?.email||''):''}"></td><td><input id="nuNome" placeholder="Nome" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px"></td><td><select id="nuPerfil">${perfis.map(p=>`<option>${esc(p.nome)}</option>`).join('')}</select></td><td class="c"><button class="btn lime sm" onclick="addUsuario()">Adicionar</button></td></tr>`:''}
@@ -2121,6 +2204,38 @@ function renderAcessos(){
       <td class="c">${ed&&!PERFIS_PADRAO.some(x=>x.nome===p.nome)?`<button class="btn sm" onclick="rmPerfil(${i})">×</button>`:''}</td></tr>`).join('')}</tbody></table>
     <div class="note" style="margin-top:10px">O perfil Administrador sempre pode tudo. As permissões também valem no banco: quem não pode subir arquivos ou editar premissas não consegue gravar, mesmo tentando por fora do painel.</div>
   </div>`;
+}
+function solicitacoesHTML(perfis, ed){
+  if (S.semV4) return `<div class="note" style="margin-bottom:14px"><b>Solicitações de acesso desativadas:</b> rode o supabase_atualizacao_v4.sql no SQL Editor do Supabase para receber os pedidos feitos na tela de login.</div>`;
+  const pend = pendentesAcesso(), hist = (S.solicitacoes||[]).filter(x=>x.status!=='pendente');
+  const dt = d => d ? new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  const padrao = perfis.some(p=>p.nome==='Consulta') ? 'Consulta' : perfis[perfis.length-1]?.nome;
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-h"><div><h3>Solicitações de acesso${pend.length?` <span class="pill Inativar" style="margin-left:6px">${fN(pend.length)} aguardando</span>`:''}</h3><div class="sub" style="margin:0">Pedidos feitos pelo botão “Solicitar acesso” na tela de login. Ao aprovar, a pessoa entra com o perfil escolhido.</div></div>${hist.length?`<a class="lnk" onclick="S.histSol=!S.histSol;renderAcessos()">${S.histSol?'Esconder respondidos':`Ver respondidos (${fN(hist.length)})`}</a>`:''}</div>
+    ${pend.length ? `<table class="tbl sol-t" style="margin-top:8px"><colgroup><col style="width:22%"><col><col class="hs" style="width:28%"><col style="width:132px"><col class="sol-b"></colgroup>
+    <thead><tr><th>Nome</th><th>E-mail</th><th class="hs">Motivo</th><th>Perfil</th><th></th></tr></thead>
+    <tbody>${pend.map(x=>{ const i=S.solicitacoes.indexOf(x); return `<tr><td><b>${esc(x.nome)}</b>${x.setor?`<div class="muted" style="font-size:12px">${esc(x.setor)}</div>`:''}<div class="muted" style="font-size:11.5px">pedido em ${dt(x.criado_em)}</div></td><td>${esc(x.email)}${x.tem_login?'':`<div style="font-size:12px;color:#7a5300">Sem login: crie no Supabase em Authentication › Users</div>`}</td><td class="hs wrap">${esc(x.motivo||'')}</td>
+      <td>${ed?`<select id="solPerfil${i}">${perfis.map(p=>`<option ${p.nome===padrao?'selected':''}>${esc(p.nome)}</option>`).join('')}</select>`:''}</td>
+      <td class="c"><div class="sol-a">${ed?`<button class="btn lime sm" onclick="responderSol(${i},true)">Aprovar</button><button class="btn sm" onclick="responderSol(${i},false)">Recusar</button>`:''}</div></td></tr>`; }).join('')}</tbody></table>`
+    : `<div class="empty" style="padding:14px 0 4px">Nenhum pedido aguardando.</div>`}
+    ${S.histSol && hist.length ? `<table class="tbl sol-t" style="margin-top:12px"><colgroup><col style="width:22%"><col><col style="width:22%"><col class="hs" style="width:24%"></colgroup>
+    <thead><tr><th>Nome</th><th>E-mail</th><th>Resposta</th><th class="hs">Respondido por</th></tr></thead>
+    <tbody>${hist.slice(0,50).map(x=>`<tr><td>${esc(x.nome)}<div class="muted" style="font-size:11.5px">pedido em ${dt(x.criado_em)}</div></td><td>${esc(x.email)}</td><td><span class="pill ${x.status==='aprovada'?'Manter':'Inativar'}">${x.status==='aprovada'?'Aprovada'+(x.perfil?' · '+esc(x.perfil):''):'Recusada'}</span></td><td class="hs">${esc(x.analisado_por||'')}<div class="muted" style="font-size:12px">${dt(x.analisado_em)}</div></td></tr>`).join('')}</tbody></table>` : ''}
+  </div>`;
+}
+async function responderSol(i, aprovar){
+  const x=S.solicitacoes[i]; if (!x) return;
+  const perfil = aprovar ? $('#solPerfil'+i)?.value : null;
+  if (!aprovar && !confirm(`Recusar o pedido de ${x.nome} (${x.email})?`)) return;
+  if (aprovar){
+    if (!S.perfis.length) await gravaPerfis(PERFIS_PADRAO);
+    const { error } = await S.sb.from('mc_usuarios').upsert({ email:String(x.email).toLowerCase(), nome:x.nome, perfil });
+    if (error){ toast('Erro: '+error.message, 6000); return; }
+  }
+  const { error } = await S.sb.from('mc_solicitacoes').update({ status: aprovar?'aprovada':'recusada', perfil, analisado_por:S.user?.email||null, analisado_em:new Date().toISOString() }).eq('id', x.id);
+  if (error){ toast('Erro: '+error.message, 6000); return; }
+  await recarregaAcessos();
+  toast(aprovar ? (x.tem_login ? `${x.nome} liberado como ${perfil}. Já pode entrar.` : `${x.nome} aprovado. Falta criar o login no Supabase (Authentication › Users).`) : 'Pedido recusado', 7000);
 }
 async function addUsuario(){
   const email=$('#nuEmail').value.trim().toLowerCase(), nome=$('#nuNome').value.trim(), perfil=$('#nuPerfil').value;
@@ -2159,13 +2274,20 @@ async function gravaPerfis(lista){
 async function salvaPerfis(){ if (await gravaPerfis(lePerfis())){ await recarregaAcessos(); toast('Perfis salvos'); } }
 async function recarregaAcessos(){
   const [u,p] = await Promise.all([S.sb.from('mc_usuarios').select('*'), S.sb.from('mc_perfis').select('*')]);
-  S.usuarios=u.data||[]; S.perfis=p.data||[]; definePermissoes(); buildNav();
+  S.usuarios=u.data||[]; S.perfis=p.data||[]; await carregaSolicitacoes(); definePermissoes(); buildNav();
   if (S.perm.sem) return semAcesso();
   render();
 }
 function semAcesso(){
   $('#nav').innerHTML='';
-  $('#main').innerHTML = `<div class="card" style="max-width:560px;margin:40px auto"><div class="empty" style="padding:40px 16px"><b>Seu usuário ainda não tem um perfil de acesso</b>Peça a um administrador do painel para incluir ${esc(S.user?.email||'seu e-mail')} na tela Acessos.</div></div>`;
+  $('#main').innerHTML = `<div class="card" style="max-width:560px;margin:40px auto"><div class="empty" style="padding:40px 16px"><b>Seu acesso ainda não foi liberado</b>Se você já pediu acesso, aguarde um administrador aprovar. Se ainda não pediu, envie o pedido abaixo para ${esc(S.user?.email||'seu e-mail')}.<div id="saMsg" style="margin-top:14px"><button class="btn lime" onclick="pedirDeDentro()">Solicitar acesso</button></div></div></div>`;
+}
+async function pedirDeDentro(){
+  const u=S.user||{}; const nome=(u.user_metadata?.nome||'').trim() || String(u.email||'').split('@')[0];
+  const { error } = await S.sb.from('mc_solicitacoes').insert({ email:String(u.email||'').toLowerCase(), nome, tem_login:true });
+  $('#saMsg').innerHTML = !error ? '<b style="color:#476000">Pedido enviado.</b> Você recebe acesso assim que um administrador aprovar.'
+    : error.code==='23505' ? 'Seu pedido já está com o administrador. Aguarde a aprovação.'
+    : 'Não foi possível enviar o pedido: '+esc(error.message);
 }
 
 /* ======================= EXPORTS ======================= */
