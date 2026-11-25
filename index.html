@@ -672,6 +672,35 @@ function resumo(res){
   return out;
 }
 
+/* ---------- preço mínimo para uma comissão máxima ----------
+   Dentro de cada faixa de preço o custo fixo + frete é constante (F), então
+   (com·p + F)/p ≤ alvo  ⇔  p ≥ F/(alvo − com). Percorre as faixas do menor para o maior preço. */
+function cortesPreco(id, P){
+  if (id==='shopee') return P.shopee.faixas.map(f=>Number(f.min));
+  if (id==='meli'){ const M = { ...P.meli, ...tabelaVigente(P.meli) }; return (M.faixas_preco||P.meli.faixas_preco).map(x=>Number(x)+0.01); }
+  if (id==='magalu') return [];
+  const t = tabelaVigente(canalExtra(P,id)||{});
+  return tipoFreteExtra(t)==='matriz' ? (t.precos_inicio||[]).map(Number) : [];
+}
+function precoMinimo(id, peso, alvo, P){
+  const cortes = [...new Set([0.01, ...cortesPreco(id,P).filter(x=>x>0.01)])].sort((a,b)=>a-b);
+  let semFrete = false, comAlta = false;
+  for (let i=0;i<cortes.length;i++){
+    const lo = cortes[i], hi = i+1<cortes.length ? cortes[i+1] : Infinity;
+    const mid = hi===Infinity ? lo+1 : (lo+hi)/2;
+    const c = custoCanal(id, mid, peso, P);
+    if (c.frete===null && id!=='shopee'){ semFrete = true; continue; }
+    if (alvo <= c.com){ comAlta = true; continue; }
+    const F = (c.fixo||0) + (c.frete||0);
+    let p = Math.ceil(Math.max(lo, F/(alvo-c.com))*100 - 1e-6)/100;
+    for (let k=0;k<3 && p<hi;k++, p=Math.round((p+0.01)*100)/100){
+      const v = custoCanal(id, p, peso, P);
+      if (v.pct!=null && v.pct <= alvo + 1e-9) return { preco:p, pct:v.pct, com:v.com, fixo:v.fixo, frete:v.frete };
+    }
+  }
+  return { preco:null, motivo: semFrete && !comAlta ? 'peso acima da tabela de frete' : comAlta ? 'a comissão do canal já passa do alvo' : 'sem preço possível' };
+}
+
 /* ---------- detalhamento do custo (para o clique no SKU) ---------- */
 function detalheCusto(id, preco, peso, P){
   const L = []; const fR = v => 'R$ ' + (Math.round(v*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -762,7 +791,7 @@ function calculaKits(kitsRows, produtos, P){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { freteExtraInfo, rotuloPreco, detalheCusto, normalizaKit, calculaKits, normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+if (typeof module !== 'undefined') module.exports = { precoMinimo, cortesPreco, freteExtraInfo, rotuloPreco, detalheCusto, normalizaKit, calculaKits, normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -959,7 +988,7 @@ function pendentes(mp){
 
 /* ============================ NAV / RENDER ============================ */
 function buildNav(){
-  const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['kits','Kits e composições'], ['premissas','Premissas'], ['cargas','Cargas'], ['acessos','Acessos']].filter(([id])=>veTela(telaDe(id)));
+  const tabs = [['geral','Visão geral'], ...MARKETPLACES.map(m=>[m.id,m.nome]), ['catalogo','Catálogo'], ['kits','Kits e composições'], ['precificacao','Precificação'], ['premissas','Premissas'], ['cargas','Cargas'], ['acessos','Acessos']].filter(([id])=>veTela(telaDe(id)));
   if (!tabs.some(t=>t[0]===S.tab) && !(S.tab==='outros' && veTela('canais'))) S.tab = tabs[0]?.[0] || 'geral';
   const nPed = pode('acessos') ? pendentesAcesso().length : 0;
   $('#nav').innerHTML = tabs.map(([id,t])=>`<button data-tab="${id}" class="${S.tab===id?'on':''}">${MPN[id]?icoHTML(id,'sm'):''}${esc(t)}${id==='acessos'&&nPed?`<span class="nb" title="${nPed} pedido${nPed>1?'s':''} de acesso aguardando">${nPed}</span>`:''}</button>`).join('');
@@ -979,6 +1008,7 @@ function render(){
   else if (t==='cargas') renderCargas();
   else if (t==='outros') renderOutros();
   else if (t==='kits') renderKits();
+  else if (t==='precificacao') renderPrec();
   else if (t==='acessos') renderAcessos();
 }
 function semDados(){
@@ -2203,12 +2233,150 @@ async function gravarKits(){
   } catch(e){ console.error(e); toast('Erro ao gravar kits: '+(e.message||e), 7000); }
 }
 
+/* ======================= PRECIFICAÇÃO ======================= */
+/* Planilha com SKU + comissão máxima → menor preço de venda por canal que respeita a comissão */
+S.prec = (()=>{ try { return JSON.parse(localStorage.getItem('matcon_prec')||'null'); } catch(e){ return null; } })();
+const alvoNum = v => { const n = num(v); if (n==null || !(n>0)) return null; return n > 1 ? n/100 : n; };
+function precLinhas(){
+  if (!S.prec) return [];
+  const base = new Map(S.produtos.map(p=>[p.sku,p]));
+  const padrao = S.prec.padrao || S.P.comissao_max;
+  return S.prec.itens.map(it=>{
+    const p = base.get(it.sku), alvo = it.alvo ?? padrao;
+    const L = { sku:it.sku, alvo, alvoPadrao: it.alvo==null, p, name: p ? p.name : '', peso: p?.peso ?? null, atual: p ? precoRef(p) : null, mp:{} };
+    if (p){
+      const e = elegibilidade(p, S.P); L.obs = e.elegivel ? '' : e.motivos.join(' · ');
+      for (const m of MARKETPLACES){
+        const r = precoMinimo(m.id, p.peso, alvo, S.P);
+        const pctAtual = L.atual > 0 ? custoCanal(m.id, L.atual, p.peso, S.P).pct : null;
+        L.mp[m.id] = { ...r, pctAtual, atende: pctAtual!=null && pctAtual <= alvo + 1e-9, dif: r.preco && L.atual ? r.preco/L.atual - 1 : null };
+      }
+    } else L.obs = 'SKU não está na base de produtos';
+    return L;
+  });
+}
+function renderPrec(){
+  const m=$('#main'), f = S.f.prec ||= { q:'', can:'', sit:'', page:0, sort:'sku', dir:1 };
+  const rows = precLinhas();
+  const achados = rows.filter(r=>r.p);
+  m.innerHTML = head('Precificação', 'Menor preço de venda em cada canal para a comissão estimada ficar dentro do limite · (comissão + fixo + frete) ÷ preço · usa as premissas e tabelas de frete vigentes') + `
+  <div class="grid g3" style="margin-bottom:16px">
+    <div class="card span2">
+      <h3>Planilha de SKUs</h3><div class="sub">Colunas <span class="mono">SKU</span> e <span class="mono">Comissão máxima</span> (aceita 18, 18% ou 0,18). SKU sem comissão usa o padrão ao lado.</div>
+      <div class="filters" style="margin-bottom:0">
+        <label class="btn lime" style="margin:0">Escolher planilha<input type="file" id="precFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
+        <button class="btn" onclick="modeloPrec()">Baixar modelo</button>
+        <label>Comissão padrão <input type="number" step="0.5" min="1" max="99" id="precPadrao" value="${fN((S.prec?.padrao||S.precPadrao||S.P.comissao_max)*100,1).replace(',','.')}" style="width:80px;border:1px solid var(--line);border-radius:8px;padding:6px 8px"> %</label>
+        ${S.prec?`<button class="btn" onclick="if(confirm('Limpar a lista de precificação?')){S.prec=null;try{localStorage.removeItem('matcon_prec')}catch(e){};renderPrec();}">Limpar lista</button>`:''}
+      </div>
+      <div id="precStatus" style="margin-top:8px">${S.prec?`<div class="muted" style="font-size:12px">Lista atual: <b>${esc(S.prec.arquivo)}</b> · ${fN(S.prec.itens.length)} SKUs · carregada em ${fD(S.prec.em)} · fica salva neste navegador</div>`:''}</div>
+    </div>
+    <div class="card"><h3>Como ler</h3><div class="note" style="margin-top:8px">Para cada canal aparece o <b>menor preço</b> que deixa a comissão estimada até o limite do SKU, e quanto ele fica acima ou abaixo do Preço Por atual do site. Em verde: o preço atual já atende. Clique no preço para ver a conta. Canais com faixa de preço (Shopee, Mercado Livre e tabelas peso × preço) mudam de taxa, fixo ou frete ao trocar de faixa, e isso já é considerado.</div></div>
+  </div>
+  ${!S.prec ? `<div class="card"><div class="empty" style="padding:48px 12px"><b>Nenhuma planilha carregada</b>Envie a planilha com SKU e comissão máxima, ou baixe o modelo.</div></div>` : !S.produtos.length ? `<div class="card">${semDados()}</div>` : `
+  <div class="grid gk" style="margin-bottom:16px">
+    ${kpi('SKUs na lista', fN(rows.length), fN(achados.length)+' encontrados na base'+(rows.length-achados.length?' · '+fN(rows.length-achados.length)+' fora':''), true)}
+    ${MARKETPLACES.map(mm=>{ const ok=achados.filter(r=>r.mp[mm.id].atende).length; return kpi(icoHTML(mm.id,'sm')+esc(mm.sigla), fN(ok)+' <span style="font-size:14px;color:var(--ink-3)">de '+fN(achados.length)+'</span>', 'já atendem no preço atual'); }).join('')}
+  </div>
+  <div class="card" id="precList">
+    <div class="card-h" style="margin-bottom:10px"><div><h3 id="precTit"></h3><div class="sub" style="margin:0">A exportação leva exatamente o que está filtrado, com o preço mínimo de cada canal</div></div><button class="btn lime" onclick="exportPrec()">Exportar para Excel</button></div>
+    <div class="filters">
+      <input type="search" id="pq" placeholder="Buscar SKU ou produto" value="${esc(f.q)}">
+      <select id="pcan"><option value="">Todos os canais</option>${MARKETPLACES.map(mm=>`<option value="${mm.id}" ${f.can===mm.id?'selected':''}>${esc(mm.nome)}</option>`).join('')}</select>
+      <select id="psit"><option value="">Qualquer situação</option><option value="sobe" ${f.sit==='sobe'?'selected':''}>Precisa subir o preço</option><option value="ok" ${f.sit==='ok'?'selected':''}>Preço atual já atende</option><option value="imp" ${f.sit==='imp'?'selected':''}>Sem preço possível</option></select>
+    </div>
+    <div class="note" style="margin:-4px 0 10px;font-size:11.5px">“Precisa subir” e “já atende” olham o canal escolhido; sem canal escolhido, olham todos os canais juntos.</div>
+    <div id="precTable"></div>
+  </div>`}`;
+  $('#precFile').onchange = e => { const fl=e.target.files[0]; e.target.value=''; if (fl) lerPrec(fl); };
+  $('#precPadrao').onchange = e => { const v = alvoNum(e.target.value); if (!v) return; if (S.prec){ S.prec.padrao = v; guardaPrec(); } else S.precPadrao = v; renderPrec(); };
+  if (S.prec && S.produtos.length){
+    $('#pq').oninput = e => { f.q=e.target.value; f.page=0; drawPrec(); };
+    $('#pcan').onchange = e => { f.can=e.target.value; f.page=0; drawPrec(); };
+    $('#psit').onchange = e => { f.sit=e.target.value; f.page=0; drawPrec(); };
+    drawPrec();
+  }
+}
+function guardaPrec(){ try { localStorage.setItem('matcon_prec', JSON.stringify(S.prec)); } catch(e){} }
+function precFiltradas(){
+  const f=S.f.prec, q=f.q.trim().toLowerCase();
+  const ids = f.can ? [f.can] : MARKETPLACES.map(m=>m.id);
+  return precLinhas().filter(r=>{
+    if (q && !r.sku.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q)) return false;
+    if (!f.sit) return true;
+    if (!r.p) return f.sit==='imp';
+    const xs = ids.map(i=>r.mp[i]);
+    if (f.sit==='ok') return xs.every(x=>x.atende);
+    if (f.sit==='sobe') return xs.some(x=>!x.atende && x.preco);
+    if (f.sit==='imp') return xs.some(x=>!x.preco);
+    return true;
+  });
+}
+function drawPrec(){
+  const f=S.f.prec, rows=precFiltradas();
+  const ids = f.can ? [f.can] : MARKETPLACES.map(m=>m.id);
+  const wCanal = f.can ? '16%' : (44/ids.length).toFixed(1)+'%';
+  const cols=[{k:'sku',t:'SKU',w:'7%'},{k:'name',t:'Produto',w:'auto'},{k:'peso',t:'Peso (kg)',w:'5%',n:1,cls:'hl'},{k:'atual',t:'Preço Por atual (R$)',w:'7%',n:1},{k:'alvo',t:'Comissão máxima',w:'6.5%',n:1},
+    ...ids.map(id=>({k:'mp_'+id,t:`${icoHTML(id,'sm')}${esc(MPS[id])}<div style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink-3)">preço mínimo (R$)</div>`,w:wCanal,n:1})), {k:'obs',t:'Observação',w:'11%',cls:'hs'}];
+  const val = (r,k) => k.startsWith('mp_') ? (r.mp[k.slice(3)]?.preco ?? null) : r[k];
+  rows.sort((a,b)=>{ const x=val(a,f.sort), y=val(b,f.sort); if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string'?x.localeCompare(y,'pt-BR'):x-y)*f.dir; });
+  const per=50, pages=Math.max(1,Math.ceil(rows.length/per)); f.page=Math.min(f.page,pages-1);
+  const pg=rows.slice(f.page*per,f.page*per+per);
+  const celula = (r,id) => { const x=r.mp[id]; if (!r.p) return '<span class="muted">—</span>';
+    if (!x.preco) return `<span style="color:#a32221;font-size:12px">${esc(x.motivo)}</span>`;
+    const cor = x.atende ? '#005c00' : '#a32221', d = x.dif;
+    return `<a class="lnk" style="font-weight:700;color:${cor}" onclick="detalhePrec('${esc(r.sku).replace(/'/g,"\\'")}','${id}')" title="Ver a conta">${fM(x.preco)}</a><div style="font-size:11.5px;color:${cor}">${d==null?'':(d>0?'+':'−')+fN(Math.abs(d)*100,1)+'% vs atual'}</div><div class="muted" style="font-size:11px">hoje ${fP(x.pctAtual)}</div>`; };
+  $('#precTable').innerHTML = `<table class="tbl hw"><colgroup>${cols.map(c=>`<col class="${c.cls||''}" style="width:${c.w}">`).join('')}</colgroup>
+  <thead><tr>${cols.map(c=>`<th class="s ${c.n?'n':''} ${c.cls||''}" data-k="${c.k}">${c.t}${f.sort===c.k?(f.dir>0?' ↑':' ↓'):''}</th>`).join('')}</tr></thead>
+  <tbody>${pg.map(r=>`<tr><td class="mono">${esc(r.sku)}</td><td>${esc(r.name)||'<span class="muted">—</span>'}</td><td class="n hl">${fN(r.peso,3)}</td><td class="n">${fM(r.atual)}</td><td class="n">${fP(r.alvo)}${r.alvoPadrao?'<div class="muted" style="font-size:11px">padrão</div>':''}</td>${ids.map(id=>`<td class="n">${celula(r,id)}</td>`).join('')}<td class="hs sit" style="${r.p?'':'color:#a32221'}">${esc(r.obs||'')}</td></tr>`).join('') || `<tr><td colspan="${cols.length}"><div class="empty">Nenhum SKU com esses filtros.</div></td></tr>`}</tbody></table>
+  ${pagerHTML(rows.length,f.page,pages,'pgPrec(')}`;
+  $('#precTit').textContent = `Preço mínimo por canal — ${fN(rows.length)} SKUs`;
+  $('#precTable').querySelectorAll('th.s').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(f.sort===k) f.dir*=-1; else { f.sort=k; f.dir=1; } drawPrec(); });
+}
+function pgPrec(p){ S.f.prec.page=p; drawPrec(); }
+function detalhePrec(sku, id){
+  const r = precLinhas().find(x=>x.sku===sku); if (!r || !r.p) return; const x=r.mp[id];
+  const dMin = detalheCusto(id, x.preco, r.peso, S.P), dAtual = r.atual>0 ? detalheCusto(id, r.atual, r.peso, S.P) : null;
+  modal(`<h2>${icoHTML(id,'lg')}<span class="mono" style="font-size:15px">${esc(sku)}</span> · ${esc(r.name)}</h2>
+    <p style="margin:4px 0 8px">Comissão máxima ${fP(r.alvo)} · peso ${fN(r.peso,3)} kg · preço mínimo no ${esc(MPN[id])}: <b>${fR(x.preco)}</b>${x.dif!=null?' ('+(x.dif>0?'+':'−')+fN(Math.abs(x.dif)*100,1)+'% vs Preço Por atual)':''}</p>
+    <div class="mh">No preço mínimo</div>${tabelaCusto(dMin, x.preco).replace('Preço de referência (Preço Por do site)','Preço sugerido')}
+    ${dAtual?`<div class="mh">No Preço Por atual do site</div>${tabelaCusto(dAtual, r.atual)}`:''}`);
+}
+async function lerPrec(file){
+  const st=$('#precStatus');
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    let itens=null;
+    const kn = k => String(k??'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    for (const name of wb.SheetNames){
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, raw:true, blankrows:false });
+      const i = aoa.findIndex(r=>(r||[]).some(x=>kn(x)==='sku'));
+      if (i<0) continue;
+      const h = aoa[i].map(kn), cs = h.indexOf('sku');
+      let cc = h.findIndex(x=>/comiss/.test(x)); if (cc<0) cc = h.findIndex(x=>/(%|percent|margem|taxa)/.test(x));
+      itens = aoa.slice(i+1).map(r=>({ sku: txt(r[cs]), alvo: cc>=0 ? alvoNum(r[cc]) : null })).filter(x=>x.sku);
+      break;
+    }
+    if (!itens || !itens.length){ st.innerHTML='<div class="err">Não encontrei a coluna SKU.</div>'; return; }
+    const uniq = [...new Map(itens.map(x=>[x.sku,x])).values()];
+    S.prec = { arquivo:file.name, em:new Date().toISOString(), padrao: alvoNum($('#precPadrao').value) || S.P.comissao_max, itens: uniq };
+    guardaPrec(); S.f.prec = { q:'', can:'', sit:'', page:0, sort:'sku', dir:1 };
+    renderPrec(); toast(`${fN(uniq.length)} SKUs carregados${uniq.some(x=>x.alvo==null)?' · '+fN(uniq.filter(x=>x.alvo==null).length)+' sem comissão (usam o padrão)':''}`, 5000);
+  } catch(e){ console.error(e); st.innerHTML=`<div class="err">Erro ao ler a planilha: ${esc(e.message||e)}</div>`; }
+}
+function modeloPrec(){ baixarXLSX('MATCON_modelo_precificacao', [{ 'SKU':'123456', 'Comissão máxima':'20%' }, { 'SKU':'654321', 'Comissão máxima':'18%' }], 'SKUs'); }
+function exportPrec(){
+  baixarXLSX('MATCON_Precificacao', precFiltradas().map(r=>{ const o={ 'SKU':r.sku, 'Produto':r.name, 'Peso (kg)':r.peso, 'Preço Por atual':r.atual, 'Comissão máxima %':Math.round(r.alvo*10000)/10000 };
+    for (const m of MARKETPLACES){ const x=r.mp[m.id]||{}; o[m.nome+' - preço mínimo']=x.preco??null; o[m.nome+' - variação vs atual %']=x.dif==null?null:Math.round(x.dif*10000)/10000; o[m.nome+' - comissão no preço mínimo %']=x.pct==null?null:Math.round(x.pct*10000)/10000; o[m.nome+' - comissão hoje %']=x.pctAtual==null?null:Math.round(x.pctAtual*10000)/10000; o[m.nome+' - já atende']=r.p?(x.atende?'Sim':'Não'):''; o[m.nome+' - observação']=x.motivo||''; }
+    o['Observação']=r.obs||''; return o; }), 'Precificação');
+}
+
 /* ======================= NÍVEIS DE ACESSO ======================= */
-const TELAS = [['geral','Visão geral'],['canais','Telas dos canais'],['catalogo','Catálogo'],['kits','Kits e composições'],['premissas','Premissas'],['cargas','Cargas'],['acessos','Acessos']];
+const TELAS = [['geral','Visão geral'],['canais','Telas dos canais'],['catalogo','Catálogo'],['kits','Kits e composições'],['precificacao','Precificação'],['premissas','Premissas'],['cargas','Cargas'],['acessos','Acessos']];
 const ACOES_P = [['cargas','Subir arquivos (base, transmissões, frete, kits)'],['kits','Criar e editar kits'],['premissas','Editar premissas e canais'],['concluir','Marcar ações como concluídas'],['exportar','Exportar para Excel'],['acessos','Gerenciar usuários e perfis']];
 const PERFIS_PADRAO = [
   { nome:'Administrador', telas:TELAS.map(t=>t[0]), acoes:ACOES_P.map(a=>a[0]) },
-  { nome:'Operador', telas:['geral','canais','catalogo','kits','premissas','cargas'], acoes:['cargas','kits','concluir','exportar'] },
+  { nome:'Operador', telas:['geral','canais','catalogo','kits','precificacao','premissas','cargas'], acoes:['cargas','kits','concluir','exportar'] },
   { nome:'Consulta', telas:['geral','canais','catalogo','kits'], acoes:['exportar'] }
 ];
 const telaDe = id => MPN[id] || id==='outros' ? 'canais' : id;
@@ -2230,7 +2398,7 @@ function definePermissoes(){
   const u = S.usuarios.find(x=>String(x.email).toLowerCase()===email);
   const p = u && (S.perfis.find(x=>x.nome===u.perfil) || PERFIS_PADRAO.find(x=>x.nome===u.perfil));
   if (!p){ S.perm = { perfil:null, telas:new Set(), acoes:new Set(), sem:true }; return; }
-  S.perm = { perfil:p.nome, telas:new Set(p.telas||[]), acoes:new Set(p.acoes||[]), setup:false, sem:false };
+  S.perm = { perfil:p.nome, telas:new Set(p.nome==='Administrador' ? TELAS.map(t=>t[0]) : (p.telas||[])), acoes:new Set(p.acoes||[]), setup:false, sem:false };
 }
 S.perm = { perfil:'Administrador', telas:new Set(TELAS.map(t=>t[0])), acoes:new Set(ACOES_P.map(a=>a[0])) };
 const veTela = t => !!S.perm?.telas.has(t);
