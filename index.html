@@ -539,12 +539,33 @@ function statusMP(eleg, pct, P, cad, publicado, precoCanal, preco){
   return viavel ? 'Subir' : '';
 }
 
+/* Frete de canal extra: sem frete, por peso, ou por peso × faixa de preço (tabela) */
+function tipoFreteExtra(t){ return t.tipo_frete || ((t.tabela||[]).length ? 'matriz' : (t.faixas_peso||[]).length ? 'peso' : 'nenhum'); }
+function freteExtraInfo(c0, preco, peso){
+  const v = tabelaVigente(c0), t = v === c0 ? c0 : v;   // tabela subida (vigência) tem prioridade
+  const tipo = tipoFreteExtra(t);
+  if (tipo === 'nenhum') return { frete:0, tipo, t };
+  const fp = (t.faixas_peso||[]).map(Number);
+  const lin = fp.findIndex(l => (peso||0) <= l);
+  if (lin < 0) return { frete:null, tipo, t, lin };
+  if (tipo === 'matriz'){
+    const ini = (t.precos_inicio||[]).map(Number); let col = 0;
+    ini.forEach((x,j) => { if (preco >= x) col = j; });
+    const val = ((t.tabela||[])[lin]||[])[col];
+    return { frete: val==null || val==='' || isNaN(val) ? null : Number(val), tipo, t, lin, col };
+  }
+  const val = (t.valores||[])[lin];
+  return { frete: val==null || val==='' ? 0 : Number(val), tipo, t, lin };
+}
+function rotuloPreco(ini, j){
+  const f = v => Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const a = Number(ini[j]||0), b = ini[j+1];
+  return b==null ? 'a partir de R$ ' + f(a) : 'R$ ' + f(a) + ' a ' + f(Number(b)-0.01);
+}
 function custoExtra(id, preco, peso, P){
-  const c0 = canalExtra(P, id) || {}; const c = { ...c0, ...tabelaVigente(c0) };
-  const fp = (c.faixas_peso||[]).map(Number), vs = (c.valores||[]).map(Number);
-  let frete = 0;
-  if (fp.length){ const i = fp.findIndex(l => (peso||0) <= l); frete = i < 0 ? null : (vs[i] ?? 0); }
-  const com = Number(c.com)||0, fixo = Number(c.fixo)||0;
+  const c0 = canalExtra(P, id) || {};
+  const { frete } = freteExtraInfo(c0, preco, peso);
+  const com = Number(c0.com)||0, fixo = Number(c0.fixo)||0;
   return { frete, fixo, com, pct: frete===null ? null : (com*preco + fixo + frete)/preco };
 }
 function custoCanal(id, preco, peso, P){
@@ -679,12 +700,17 @@ function detalheCusto(id, preco, peso, P){
     if (i<0){ ok=false; L.push({ r:'Frete', v:'—', o:'peso acima da tabela' }); }
     else { frete=M.valores[i]; L.push({ r:'Frete', v:fR(frete), o:`peso ${i>0?'de '+kg(M.faixas_peso[i-1])+' ':''}até ${M.faixas_peso[i]>=1e8?'acima':kg(M.faixas_peso[i])} kg${M.vigencia?' · tabela desde '+M.vigencia.split('-').reverse().join('/'):''}` }); }
   } else {
-    const c0 = canalExtra(P,id)||{}; const c = { ...c0, ...tabelaVigente(c0) };
-    com = Number(c.com)||0; fixo = Number(c.fixo)||0;
+    const c0 = canalExtra(P,id)||{};
+    com = Number(c0.com)||0; fixo = Number(c0.fixo)||0;
     L.push({ r:'Taxa de comissão', v:fR(com*preco), o: pc(com) });
     if (fixo) L.push({ r:'Custo fixo por venda', v:fR(fixo), o:'' });
-    const fp=(c.faixas_peso||[]).map(Number);
-    if (fp.length){ const i=fp.findIndex(l=>(peso||0)<=l); if(i<0){ ok=false; L.push({ r:'Frete', v:'—', o:'peso acima da tabela' }); } else { frete=Number((c.valores||[])[i])||0; L.push({ r:'Frete', v:fR(frete), o:`peso até ${kg(fp[i])} kg` }); } }
+    const fi = freteExtraInfo(c0, preco, peso), t = fi.t, fp=(t.faixas_peso||[]).map(Number);
+    const vig = t.vigencia ? ' · tabela desde '+t.vigencia.split('-').reverse().join('/') : '';
+    if (fi.tipo!=='nenhum'){
+      if (fi.frete===null){ ok=false; L.push({ r:'Frete', v:'—', o: fi.lin<0 || fi.lin==null ? 'peso acima da tabela' : 'faixa sem valor na tabela' }); }
+      else { frete=fi.frete; const pAnt = fi.lin>0 ? fp[fi.lin-1] : 0;
+        L.push({ r:'Frete', v:fR(frete), o:`peso ${pAnt>0?'de '+kg(pAnt)+' ':''}até ${fp[fi.lin]>=1e8?'acima':kg(fp[fi.lin])} kg${fi.tipo==='matriz'?' × preço '+rotuloPreco(t.precos_inicio||[], fi.col):''}${vig}` }); }
+    }
   }
   const total = com*preco + fixo + frete;
   return { linhas:L, total, pct: ok && preco>0 ? total/preco : null, com, fixo, frete };
@@ -736,7 +762,7 @@ function calculaKits(kitsRows, produtos, P){
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { detalheCusto, normalizaKit, calculaKits, normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
+if (typeof module !== 'undefined') module.exports = { freteExtraInfo, rotuloPreco, detalheCusto, normalizaKit, calculaKits, normalizaPublicacao, ACOES, PUB_ORDEM, DEFAULT_PREMISSAS, MARKETPLACES, setCanais, custoCanal, tabelaVigente, lerTabelaFrete, pesoLimite, hojeISO, STATUS, STATUS_LABEL, normalizaProduto, normalizaAnuncio, calcula, resumo, mpFromAnymarket, elegibilidade, custoShopee, custoMeli, custoMagalu, precoRef };
 
 </script>
 
@@ -1083,7 +1109,7 @@ function renderMP(mp){
   const f = S.f[mp] ||= { q:'', st:'todos', pub:'cad', dep:'', oc:'', pend:false, sort:'pct', dir:1, page:0 };
   f.pub ??= '';
   const cx = canalExtra(S.P, mp);
-  const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : mp==='magalu' ? `Comissão ${fP(S.P.magalu.com)} + frete por peso` : `Comissão ${fP(cx?.com)}${cx?.fixo?' + fixo '+fR(cx.fixo):''}${(cx?.faixas_peso||[]).length?' + frete por peso':''}`;
+  const regra = mp==='shopee' ? 'Comissão por faixa de preço + valor fixo' : mp==='meli' ? `Comissão ${fP(S.P.meli.com)} + frete tabela (×${S.P.meli.multiplicador})` : mp==='magalu' ? `Comissão ${fP(S.P.magalu.com)} + frete por peso` : `Comissão ${fP(cx?.com)}${cx?.fixo?' + fixo '+fR(cx.fixo):''}${({peso:' + frete por peso',matriz:' + frete por peso e faixa de preço'})[tipoFreteExtra(tabelaVigente(cx||{}))]||''}`;
   const temPub = S.res.comPublicacoes.includes(mp), preco = temPreco(mp);
   const pend = st => S.res.linhas.filter(l=>l.mp[mp].status===st && !isDone(l,mp)).length;
   const cardP = (v, lb, n, d, cor) => `<div class="card kpi click ${f.pub===v?'sel':''}" onclick="setMPf('${mp}','pub','${v}')"><div class="lb">${cor?`<span class="dot" style="background:${cor};border-radius:50%"></span>`:''}${lb}</div><div class="v">${fN(n)}</div><div class="d">${d}</div></div>`;
@@ -1564,15 +1590,44 @@ function canaisExtraHTML(P){
         <div class="fld"><label>Comissão</label>${num(`canais_extra.${i}.com`,c.com,'0.001','0,16')}<div class="hint">Em decimal: 0,16 = 16%</div></div>
         <div class="fld"><label>Valor fixo por venda (R$)</label>${num(`canais_extra.${i}.fixo`,c.fixo,'any','0')}</div>
       </div>
-      <div style="margin-top:12px;max-width:420px">
-        <div class="fld"><label>Frete por peso (opcional)</label><div class="hint" style="margin-bottom:6px">Deixe vazio se o canal não cobra frete do vendedor</div></div>
-        <table class="tbl"><thead><tr><th>Peso até (kg)</th><th class="n">Frete (R$)</th><th style="width:44px"></th></tr></thead>
-        <tbody>${(c.faixas_peso||[]).map((x,j)=>`<tr><td>${cell(`canais_extra.${i}.faixas_peso.${j}`,x)}</td><td>${cell(`canais_extra.${i}.valores.${j}`,(c.valores||[])[j])}</td><td class="c"><button class="btn sm" title="Remover faixa" onclick="rmFaixa(${i},${j})">×</button></td></tr>`).join('') || `<tr><td colspan="3" class="muted">Sem frete</td></tr>`}</tbody></table>
-        <button class="btn sm" style="margin-top:8px" onclick="addFaixa(${i})">+ Faixa de peso</button>
-      </div>
+      ${freteExtraHTML(P, c, i)}
     </div>`).join('')}
   </div>`;
 }
+/* Frete do canal extra: sem frete, por peso, ou tabela peso × faixa de preço */
+function freteExtraHTML(P, c, i){
+  const t = tabelaVigente(c), k = (c.historico||[]).indexOf(t), pre = `canais_extra.${i}.` + (k>=0 ? `historico.${k}.` : '');
+  const tipo = tipoFreteExtra(t), cell=(path,v)=>`<input class="cell" type="number" step="any" data-p="${path}" value="${v??''}">`;
+  const prox = (c.historico||[]).filter(h=>h.vigencia>hojeISO()).sort((a,b)=>a.vigencia<b.vigencia?-1:1)[0];
+  const nota = (k>=0 || prox) ? `<div class="note" style="margin:8px 0">${k>=0?`Tabela vigente desde <b>${fDia(t.vigencia)}</b> · ${esc(t.arquivo||'')}`:'Tabela cadastrada aqui'}${prox?` · próxima tabela entra em <b>${fDia(prox.vigencia)}</b>`:''}</div>` : '';
+  let corpo = '';
+  if (k>=0 && tipo==='peso' && t.coluna) corpo += `<div class="note" style="margin:0 0 8px;background:#fdf3dc;color:#7a5300"><b>Atenção:</b> esta tabela foi carregada usando só a coluna <b>${esc(t.coluna)}</b> da planilha. Se o frete do canal muda conforme o preço, suba a planilha de novo e escolha “Peso × faixa de preço”.</div>`;
+  if (tipo==='peso'){
+    corpo += `<div style="max-width:420px"><table class="tbl"><thead><tr><th>Peso até (kg)</th><th class="n">Frete (R$)</th><th style="width:44px"></th></tr></thead>
+      <tbody>${(t.faixas_peso||[]).map((x,j)=>`<tr><td>${pesoCell(pre+'faixas_peso.'+j,x,(t.faixas_peso||[])[j-1])}</td><td>${cell(pre+'valores.'+j,(t.valores||[])[j])}</td><td class="c"><button class="btn sm" title="Remover faixa" onclick="rmFaixa(${i},${j})">×</button></td></tr>`).join('') || `<tr><td colspan="3" class="muted">Nenhuma faixa ainda</td></tr>`}</tbody></table>
+      <button class="btn sm" style="margin-top:8px" onclick="addFaixa(${i})">+ Faixa de peso</button></div>`;
+  } else if (tipo==='matriz'){
+    const ini = t.precos_inicio||[0];
+    corpo = `<div class="hint" style="margin:2px 0 6px">Linhas: peso até (kg). Colunas: faixa do Preço Por do site, valendo <b>a partir de</b> cada valor (a primeira começa em R$ 0).</div>
+      <table class="tbl dense hw"><colgroup><col style="width:110px">${ini.map(()=>'<col>').join('')}<col style="width:44px"></colgroup>
+      <thead><tr><th>Peso até (kg)</th>${ini.map((x,j)=>`<th class="n"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end"><span style="font-size:10px">a partir de R$</span>${ini.length>1?`<button class="btn sm" style="padding:0 6px" title="Remover faixa de preço" onclick="rmColFrete(${i},${j})">×</button>`:''}</div>${j===0?`<input type="hidden" data-p="${pre}precos_inicio.0" value="0"><div style="text-align:right;padding:4px 5px;font-size:12px">0,00</div>`:cell(pre+'precos_inicio.'+j,x)}</th>`).join('')}<th></th></tr></thead>
+      <tbody>${(t.faixas_peso||[]).map((p,r)=>`<tr><td>${pesoCell(pre+'faixas_peso.'+r,p,(t.faixas_peso||[])[r-1])}</td>${ini.map((_,j)=>`<td>${cell(pre+'tabela.'+r+'.'+j,((t.tabela||[])[r]||[])[j])}</td>`).join('')}<td class="c"><button class="btn sm" title="Remover faixa de peso" onclick="rmFaixa(${i},${r})">×</button></td></tr>`).join('') || `<tr><td colspan="${ini.length+2}" class="muted">Nenhuma faixa ainda</td></tr>`}</tbody></table>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm" onclick="addFaixa(${i})">+ Faixa de peso</button><button class="btn sm" onclick="addColFrete(${i})">+ Faixa de preço</button></div>`;
+  }
+  return `<div style="margin-top:14px">
+    <div class="card-h" style="align-items:flex-end"><div class="fld" style="margin:0;min-width:260px"><label>Frete cobrado do vendedor</label>
+      <select data-p="${pre}tipo_frete" data-t="s" onchange="trocaTipoFrete(${i},this.value)"><option value="nenhum" ${tipo==='nenhum'?'selected':''}>Sem frete</option><option value="peso" ${tipo==='peso'?'selected':''}>Por peso</option><option value="matriz" ${tipo==='matriz'?'selected':''}>Por peso e faixa de preço</option></select></div>
+      ${c.id&&(P===S.P||(S.P.canais_extra||[]).some(x=>x.id===c.id))?`<button class="btn sm" onclick="irFrete('${c.id}')">Subir tabela de frete</button>`:''}</div>
+    ${nota}${corpo}</div>`;
+}
+/* objeto de frete que está valendo (tabela subida com vigência ou a cadastrada no canal) */
+const frObj = c => tabelaVigente(c);
+function trocaTipoFrete(i, v){ editCanais(x=>{ const o=frObj(x[i]); o.tipo_frete=v; o.faixas_peso ||= []; o.valores ||= [];
+  if (v==='matriz'){ o.precos_inicio ||= [0]; o.tabela ||= []; if(!o.faixas_peso.length) o.faixas_peso.push(null);
+    o.tabela = o.faixas_peso.map((_,r)=>{ const row=(o.tabela[r]||[]).slice(0,o.precos_inicio.length); while(row.length<o.precos_inicio.length) row.push(r<o.valores.length&&row.length===0?o.valores[r]:null); return row; }); }
+  if (v==='peso' && !o.faixas_peso.length){ o.faixas_peso.push(null); o.valores.push(null); } }); }
+function addColFrete(i){ editCanais(x=>{ const o=frObj(x[i]); o.precos_inicio ||= [0]; const ult=Number(o.precos_inicio[o.precos_inicio.length-1])||0; o.precos_inicio.push(ult?ult+50:50); (o.tabela||=[]).forEach(r=>r.push(null)); }); }
+function rmColFrete(i,j){ editCanais(x=>{ const o=frObj(x[i]); o.precos_inicio.splice(j,1); if(!o.precos_inicio.length) o.precos_inicio=[0]; o.precos_inicio[0]=0; (o.tabela||[]).forEach(r=>r.splice(j,1)); }); }
 function subirIcone(i, input){
   const f=input.files[0]; if(!f) return;
   const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{
@@ -1582,10 +1637,10 @@ function subirIcone(i, input){
   }; img.src=r.result; }; r.readAsDataURL(f);
 }
 function editCanais(fn, foco){ S.Pd = readPremissas(); S.Pd.canais_extra ||= []; fn(S.Pd.canais_extra); if (foco!=null) S.focoCanal = foco; renderPremissas(); }
-function addCanal(nome=''){ editCanais(c=>c.push({ id:'x_'+Date.now().toString(36), nome, anymarket:nome, sigla:nome.split(' ')[0]||'', cor_fundo:'#52514e', cor_fonte:'#ffffff', com:null, fixo:0, faixas_peso:[], valores:[] }), (S.Pd?.canais_extra||S.P.canais_extra||[]).length); }
+function addCanal(nome=''){ editCanais(c=>c.push({ id:'x_'+Date.now().toString(36), nome, anymarket:nome, sigla:nome.split(' ')[0]||'', cor_fundo:'#52514e', cor_fonte:'#ffffff', com:null, fixo:0, tipo_frete:'nenhum', faixas_peso:[], valores:[] }), (S.Pd?.canais_extra||S.P.canais_extra||[]).length); }
 function rmCanal(i){ if(!confirm('Remover este canal? Ele sai das abas e do resumo depois de salvar.')) return; editCanais(c=>c.splice(i,1)); }
-function addFaixa(i){ editCanais(c=>{ c[i].faixas_peso.push(null); c[i].valores.push(null); }); }
-function rmFaixa(i,j){ editCanais(c=>{ c[i].faixas_peso.splice(j,1); c[i].valores.splice(j,1); }); }
+function addFaixa(i){ editCanais(c=>{ const o=frObj(c[i]); (o.faixas_peso||=[]).push(null); (o.valores||=[]).push(null); if(tipoFreteExtra(o)==='matriz') (o.tabela||=[]).push((o.precos_inicio||[0]).map(()=>null)); }); }
+function rmFaixa(i,j){ editCanais(c=>{ const o=frObj(c[i]); (o.faixas_peso||[]).splice(j,1); (o.valores||[]).splice(j,1); (o.tabela||[]).splice(j,1); }); }
 function novoCanal(nome){
   if (S.tab!=='premissas'){ S.Pd=null; S.tab='premissas'; buildNav(); render(); }
   const ja = (S.Pd.canais_extra||[]).findIndex(c=>String(c.anymarket||c.nome).trim().toLowerCase()===nome.trim().toLowerCase());
@@ -1604,7 +1659,13 @@ function readPremissas(){
 async function savePremissas(){
   const P = readPremissas();
   for (const c of (P.canais_extra||[])){
-    c.faixas_peso = c.faixas_peso.map(Number); c.valores = c.valores.map(Number);
+    for (const o of [c, ...(c.historico||[])]){
+      if (o.faixas_peso) o.faixas_peso = o.faixas_peso.map(Number);
+      if (o.valores) o.valores = o.valores.map(Number);
+      if (o.precos_inicio) o.precos_inicio = o.precos_inicio.map(Number);
+      if (o.tabela) o.tabela = o.tabela.map(r=>r.map(Number));
+      if (o.tipo_frete==='matriz' && (o.precos_inicio||[]).some((v,j,a)=>j>0 && !(v>a[j-1]))){ toast(`${c.nome}: as faixas de preço precisam estar em ordem crescente`, 5000); return; }
+    }
     if (!c.nome){ toast('Dê um nome ao canal novo antes de salvar', 4000); return; }
     if (!(c.com > 0)){ toast(`Informe a comissão do canal ${c.nome} antes de salvar`, 4000); return; }
     if (!c.anymarket) c.anymarket = c.nome;
@@ -1703,7 +1764,8 @@ async function lerFrete(file){
       extra = compararMeli(atual, t);
     } else {
       resumo = `${fN(t.faixas_peso.filter(x=>x<1e8).length)} faixas de peso`;
-      if (t.colunas.length>1) extra = `<div style="margin-top:6px">Coluna de valores a usar: <select id="freteCol">${t.colunas.map((c,i)=>`<option value="${i}">${esc(c)}</option>`).join('')}</select></div>`;
+      if (t.colunas.length>1) extra = `<div style="margin-top:6px">Como usar a tabela: <select id="freteCol">${id!=='magalu'?`<option value="m">Peso × faixa de preço (as ${t.colunas.length} colunas: ${t.colunas.map(c=>esc(c)).join(' · ')})</option>`:''}${t.colunas.map((c,i)=>`<option value="${i}">Só por peso, coluna ${esc(c)}</option>`).join('')}</select></div>`;
+      if (id!=='magalu' && t.colunas.length>1) resumo = `${fN(t.faixas_peso.filter(x=>x<1e8).length)} faixas de peso × ${t.colunas.length} faixas de preço`;
     }
     st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b> — ${resumo}. Vale para <b>${esc(canaisComFrete().find(c=>c[0]===id)[1])}</b> a partir de <b>${fDia(vig)}</b>${vig>hojeISO()?' (até lá continua a tabela atual)':''}.${extra}</div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" onclick="gravarFrete()">Confirmar tabela</button><button class="btn" onclick="$('#freteStatus').innerHTML=''">Cancelar</button></div>`;
@@ -1722,7 +1784,8 @@ async function gravarFrete(){
   const P=structuredClone(S.P), o=freteObj(P,N.id); o.historico ||= [];
   const ent = { vigencia:N.vig, arquivo:N.arquivo, carregado_em:new Date().toISOString(), usuario:S.user?.email||null, faixas_peso:N.t.faixas_peso };
   if (N.id==='meli'){ ent.tabela=N.t.matriz; ent.colunas=N.t.colunas; ent.faixas_preco=N.t.colunas.slice(1).map(precoInicio); }
-  else { const c=+($('#freteCol')?.value||0); ent.valores=N.t.matriz.map(r=>r[c]); ent.coluna=N.t.colunas[c]; }
+  else if ($('#freteCol')?.value==='m'){ ent.tipo_frete='matriz'; ent.tabela=N.t.matriz; ent.colunas=N.t.colunas; ent.precos_inicio=N.t.colunas.map(precoInicio); ent.precos_inicio[0]=0; }
+  else { const c=+($('#freteCol')?.value||0); ent.valores=N.t.matriz.map(r=>r[c]); ent.coluna=N.t.colunas[c]; if (N.id!=='magalu') ent.tipo_frete='peso'; }
   o.historico.push(ent);
   if (await salvarP(P)){ S.freteNovo=null; toast('Tabela de frete gravada'); renderCargas(); }
 }
@@ -2166,7 +2229,7 @@ const pode = a => !!S.perm?.acoes.has(a);
 const PERM_SEL = {
   exportar: '[onclick^="export"]',
   cargas: '#drop, [onclick^="registrarSnapshot"], #freteCard .filters, [onclick^="rmFrete"], [onclick^="gravarFrete"], #kitCard .filters, [onclick^="gravarKits"], [onclick^="rmFila"], #btnConf, [onclick^="irFrete"]',
-  premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick*="novoCanal"], .icone-up',
+  premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick^="addColFrete"], [onclick^="rmColFrete"], [onclick*="novoCanal"], .icone-up',
   concluir: '[onchange^="toggleAcao"]',
   kits: '[onclick^="editarKit"], [onclick^="excluirKit"], [onclick^="salvarKit"], [onchange^="selKit"], #kitRodape'
 };
