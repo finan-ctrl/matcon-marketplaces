@@ -1671,6 +1671,16 @@ async function savePremissas(){
     if (!c.anymarket) c.anymarket = c.nome;
     if (!c.sigla) c.sigla = c.nome;
   }
+  if (!S.local){
+    // não apaga tabelas de frete subidas por outra pessoa depois que esta tela foi aberta
+    const atual = await S.sb.from('mc_premissas').select('dados').eq('id',1).maybeSingle();
+    const D = atual.data?.dados;
+    if (D){
+      const junta = (meu, deles) => { if (!deles?.historico?.length) return; const m = new Map((deles.historico||[]).map(h=>[h.carregado_em+'|'+h.vigencia,h])); (meu.historico||[]).forEach(h=>m.set(h.carregado_em+'|'+h.vigencia,h)); meu.historico=[...m.values()]; };
+      junta(P.meli, D.meli); junta(P.magalu, D.magalu);
+      (P.canais_extra||[]).forEach(c=>junta(c, (D.canais_extra||[]).find(x=>x.id===c.id)));
+    }
+  }
   S.P = P; S.Pd = structuredClone(P);
   if (!S.local){
     const { error } = await S.sb.from('mc_premissas').upsert({ id:1, dados:S.P, usuario:S.user?.email||null, atualizado_em:new Date().toISOString() });
