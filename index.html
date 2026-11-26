@@ -192,6 +192,7 @@ th.c .chh{align-items:center}
 .pb-r{font-size:12px;color:var(--ink-3);margin-top:3px;line-height:1.4}
 .pb-a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;cursor:default}
 .pb.fechado .pb-c{display:none}
+.pb.off{background:#f7f7f4}.pb.off .pb-n{opacity:.55}
 .pb-c{margin-top:12px;border-top:1px solid var(--line-2);padding-top:4px}
 .pb-c .mh:first-child{margin-top:8px}
 @media(max-width:700px){.pb-h{flex-wrap:wrap}.pb-a{width:100%;justify-content:flex-start}}
@@ -347,7 +348,7 @@ const DEFAULT_PREMISSAS = {
     ]
   },
   canais_extra: [],
-  canais_removidos: [], // canais da implantação (shopee/meli/magalu) desligados em Premissas — regras ficam guardadas     // canais cadastrados em Premissas: {id,nome,anymarket,sigla,cor_fundo,cor_fonte,com,fixo,faixas_peso[],valores[]}
+  canais_removidos: [], // canais desligados em Premissas (ids) — regras e tabelas ficam guardadas     // canais cadastrados em Premissas: {id,nome,anymarket,sigla,cor_fundo,cor_fonte,com,fixo,faixas_peso[],valores[]}
   magalu: {
     com: 0.148,
     faixas_peso: [0.5,1,2,5,9,13,17,23,30],
@@ -367,7 +368,7 @@ function setCanais(P){
   const fora = P.canais_removidos || [];
   MARKETPLACES.push(...MARKETPLACES_BASE.filter(m => !fora.includes(m.id)));
   for (const c of (P.canais_extra||[])){
-    if (!c.id || !c.nome) continue;
+    if (!c.id || !c.nome || fora.includes(c.id)) continue;
     MARKETPLACES.push({ id:c.id, nome:c.nome, any:[String(c.anymarket||c.nome).trim().toLowerCase()].filter(Boolean), sigla:c.sigla||c.nome, bg:c.cor_fundo||'#52514e', fg:c.cor_fonte||'#ffffff', extra:true });
   }
 }
@@ -787,7 +788,9 @@ function normalizaKit(row){
   // preço: aceita "Preço sugerido", "Preço OUT sugerido", "Preco sugerido"… (qualquer coluna com preço/sugerido)
   const keys = Object.keys(row), kn = k => k.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const kp = keys.find(k => /preco/.test(kn(k)) && /sugerid/.test(kn(k))) || keys.find(k => /preco|valor/.test(kn(k)));
-  return { kit: txt(g('kit')), sku: txt(g('sku')), descricao: decodeHtml(txt(g('descrição') ?? g('descricao'))), quantidade: num(g('quantidade')) || 1, preco_sugerido: kp ? num(row[kp]) : null, peso: null };
+  // código do kit: "SKU do kit", "Código do kit", "Cód. kit", "SKU kit", "Código"…
+  const kc = keys.find(k => kn(k)!=='kit' && kn(k)!=='sku' && /kit/.test(kn(k)) && /(sku|cod|codigo|ref)/.test(kn(k))) || keys.find(k => /^(codigo|cod\.?|referencia|ref\.?)$/.test(kn(k)));
+  return { codigo: kc ? txt(row[kc]) : '', kit: txt(g('kit')), sku: txt(g('sku')), descricao: decodeHtml(txt(g('descrição') ?? g('descricao'))), quantidade: num(g('quantidade')) || 1, preco_sugerido: kp ? num(row[kp]) : null, peso: null };
 }
 function calculaKits(kitsRows, produtos, P){
   const base = new Map(produtos.map(p => [p.sku, p]));
@@ -821,7 +824,7 @@ function calculaKits(kitsRows, produtos, P){
       const d = preco > 0 ? detalheCusto(m.id, preco, peso, P) : null;
       mp[m.id] = { ...(d||{}), viavel: !!(elegivel && d && d.pct != null && d.pct <= P.comissao_max) };
     }
-    out.push({ kit:nome, origem: itens.find(i=>i.origem)?.origem || '', itens:comps, n:comps.length, unidades:comps.reduce((a,c)=>a+c.quantidade,0), preco, peso:Math.round(peso*1000)/1000, avulso:Math.round(avulso*100)/100,
+    out.push({ kit:nome, codigo: itens.find(i=>i.codigo)?.codigo || '', origem: itens.find(i=>i.origem)?.origem || '', itens:comps, n:comps.length, unidades:comps.reduce((a,c)=>a+c.quantidade,0), preco, peso:Math.round(peso*1000)/1000, avulso:Math.round(avulso*100)/100,
       desconto: avulso>0 ? 1 - preco/avulso : null, disponiveis: disp===Infinity?0:disp, elegivel, problemas, mp });
   }
   return out;
@@ -1092,7 +1095,7 @@ function renderGeral(){
         <tbody>
           <tr><td><b>Flagship</b></td><td class="n">${lk(fN(s.flagship),"abrirCatalogo('h')",'Ver SKUs Flagship habilitados')}</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n muted">—</td><td class="n hs muted">—</td></tr>
           ${MARKETPLACES.map(x=>{const r=s.mp[x.id], L=(v,st,t,pend)=>lk(v,`abrirLista('${x.id}','${st}',${!!pend})`,`${x.nome} · ${t}`);return `<tr><td>${icoHTML(x.id,'sm')}${lk('<b>'+x.nome+'</b>',`abrirLista('${x.id}','cad')`,'Ver os SKUs cadastrados no '+x.nome)}</td><td class="n">${L(fN(r.cadastrados),'cad','Cadastrados')}</td><td class="n">${L(fN(r.ativos),'ativos','Publicados')}</td><td class="n">${L(fN(r.Inativar),'Inativar','Inativar')}</td><td class="n">${temPreco(x.id)?L(fN(r.Dif),'Dif','Preço diferente'):'<span class="muted" title="Envie o export de preços do Anymarket para comparar">—</span>'}</td><td class="n">${L(fN(r.Ativar),'Ativar','Ativar anúncio')}</td><td class="n">${L(fN(r.Subir),'Subir','Subir')}</td><td class="n"><b>${L(fN(r.final),'final','Final projetado')}</b></td><td class="n hs">${L(fN(pendentes(x.id)),'acoes','Pendentes',true)}</td></tr>`}).join('')}
-          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· ${nativoPorNome(k)?'removido':'sem regras'}</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="7" style="text-align:left" class="muted">${nativoPorNome(k)?'Canal removido em Premissas':'Canal sem regras de comissão'} · ${lk(nativoPorNome(k)?'<b>restaurar canal</b>':'<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
+          ${Object.entries(s.outros).map(([k,v])=>`<tr><td>${esc(k)} <span class="muted">· ${canalDesligado(k)?'desligado':'sem regras'}</span></td><td class="n">${lk(fN(v),`abrirOutros('${esc(k).replace(/'/g,"\\'")}')`,'Ver anúncios '+esc(k))}</td><td colspan="7" style="text-align:left" class="muted">${canalDesligado(k)?'Canal desligado em Premissas':'Canal sem regras de comissão'} · ${lk(canalDesligado(k)?'<b>religar canal</b>':'<b>cadastrar regras</b>',`novoCanal('${esc(k).replace(/'/g,"\\'")}')`,'Cadastrar '+esc(k)+' em Premissas')}</td></tr>`).join('')}
         </tbody>
       </table>
     </div>
@@ -1580,7 +1583,8 @@ function renderPremissas(){
   const pc = v => v==null||v==='' ? '—' : fP(Number(v),1);
   const semRegra = Object.keys(S.sum?.outros||{}).filter(n=>!(P.canais_extra||[]).some(c=>String(c.anymarket||c.nome).trim().toLowerCase()===n.trim().toLowerCase()));
   const fora = P.canais_removidos||[];
-  const rmN = id => `<button class="btn sm" onclick="rmNativo('${id}')">Remover canal</button>`;
+  const rmN = id => fora.includes(id) ? `<button class="btn sm lime" onclick="religaCanal('${id}')">Religar canal</button>` : `<button class="btn sm" onclick="desligaCanal('${id}')">Desligar canal</button>`;
+  const offTxt = id => fora.includes(id) ? '<b style="color:#a32221">Desligado</b> · ' : '';
   // ---- elegibilidade
   const eleg = premBloco('eleg', '<h3>Elegibilidade e base</h3>', `Seller ${esc(P.seller_id)} · peso &lt; ${fN(P.peso_max)} kg · dimensões &lt; ${fN(P.dim_max)} cm · comissão estimada até ${fP(P.comissao_max,0)} · cadastro sem peso/dimensão ${P.exigir_cadastro?'fica inelegível':'segue elegível'}`, '', `
     <div class="sub">Um SKU é elegível quando é do seller, está habilitado, tem preço, não é inflamável e respeita os limites de peso e dimensão. A comissão estimada é calculada sobre o Preço Por do site (ou o Preço De, quando não há Preço Por).</div>
@@ -1596,7 +1600,7 @@ function renderPremissas(){
     <div class="note" style="margin-top:12px">Peso: valores a partir de 1.000 são tratados como escala ×1.000.000 do export (ex.: 1077000 → 1,077 kg). Preço e estoque são divididos na carga — se mudar os divisores, reenvie a base.</div>`);
   // ---- Shopee
   const fs = P.shopee.faixas, coms=fs.map(x=>x.com), fixos=fs.map(x=>x.fixo);
-  const shopee = fora.includes('shopee') ? '' : premBloco('shopee', premTit('shopee','Shopee'), `Comissão de ${fP(Math.min(...coms),0)} a ${fP(Math.max(...coms),0)} + fixo de ${fR(Math.min(...fixos))} a ${fR(Math.max(...fixos))}, por faixa de preço · ${fs.length} faixas · sem frete`, rmN('shopee'), `
+  const shopee = premBloco('shopee', premTit('shopee','Shopee'), `${offTxt('shopee')}Comissão de ${fP(Math.min(...coms),0)} a ${fP(Math.max(...coms),0)} + fixo de ${fR(Math.min(...fixos))} a ${fR(Math.max(...fixos))}, por faixa de preço · ${fs.length} faixas · sem frete`, rmN('shopee'), `
     <div class="mh">Comissão e taxas</div>
     <div class="sub">Faixa aplicada quando o Preço Por é maior ou igual a “a partir de”. Comissão em decimal (0,14 = 14%).</div>
     <div style="max-width:560px"><table class="tbl"><thead><tr><th>A partir de (R$)</th><th class="n">Fixo (R$)</th><th class="n">Comissão</th></tr></thead>
@@ -1604,7 +1608,7 @@ function renderPremissas(){
     <div class="mh">Frete</div><div class="sub" style="margin:0">A Shopee não cobra frete do vendedor no cálculo.</div>`);
   // ---- Mercado Livre
   const vm = vigInfo(P,'meli'), colsM = vm.t.colunas||P.meli.colunas;
-  const meli = fora.includes('meli') ? '' : premBloco('meli', premTit('meli','Mercado Livre'), `Comissão ${pc(P.meli.com)} (Clássico) + frete por peso e faixa de preço · reputação ${P.meli.multiplicador==2?'ruim (frete ×2)':'boa (×1)'} · ${vm.t.faixas_peso.filter(x=>x<1e8).length} pesos × ${colsM.length} faixas de preço`, rmN('meli'), `
+  const meli = premBloco('meli', premTit('meli','Mercado Livre'), `${offTxt('meli')}Comissão ${pc(P.meli.com)} (Clássico) + frete por peso e faixa de preço · reputação ${P.meli.multiplicador==2?'ruim (frete ×2)':'boa (×1)'} · ${vm.t.faixas_peso.filter(x=>x<1e8).length} pesos × ${colsM.length} faixas de preço`, rmN('meli'), `
     <div class="mh">Comissão e taxas</div>
     <div class="form-grid">
       <div class="fld"><label>Comissão</label>${inp('meli.com',P.meli.com,'0.001','Em decimal: 0,12 = 12%')}</div>
@@ -1616,7 +1620,7 @@ function renderPremissas(){
     <tbody>${vm.t.tabela.map((row,i)=>`<tr><td>${pesoCell(vm.pre+'faixas_peso.'+i,vm.t.faixas_peso[i],vm.t.faixas_peso[i-1])}</td>${row.map((x,j)=>`<td>${cell(vm.pre+'tabela.'+i+'.'+j,x)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
   // ---- Magalu
   const vg = vigInfo(P,'magalu');
-  const magalu = fora.includes('magalu') ? '' : premBloco('magalu', premTit('magalu','Magalu'), `Comissão ${pc(P.magalu.com)} + frete por peso · ${vg.t.faixas_peso.filter(x=>x<1e8).length} faixas de peso`, rmN('magalu'), `
+  const magalu = premBloco('magalu', premTit('magalu','Magalu'), `${offTxt('magalu')}Comissão ${pc(P.magalu.com)} + frete por peso · ${vg.t.faixas_peso.filter(x=>x<1e8).length} faixas de peso`, rmN('magalu'), `
     <div class="mh">Comissão e taxas</div>
     <div class="form-grid"><div class="fld"><label>Comissão</label>${inp('magalu.com',P.magalu.com,'0.001','Em decimal: 0,148 = 14,8%')}</div></div>
     <div class="mh">Frete</div>${vg.nota}
@@ -1624,15 +1628,15 @@ function renderPremissas(){
     <tbody>${vg.t.faixas_peso.map((x,i)=>`<tr><td>${pesoCell(vg.pre+'faixas_peso.'+i,x,vg.t.faixas_peso[i-1])}</td><td>${cell(vg.pre+'valores.'+i,vg.t.valores[i])}</td></tr>`).join('')}</tbody></table></div>`);
   m.innerHTML = head('Premissas','Regras usadas no cálculo — alterações valem para todos os usuários depois de salvar',
     `<button class="btn" onclick="premTodos(true)">▾ Expandir todos</button><button class="btn" onclick="premTodos(false)">▴ Encolher todos</button><button class="btn" onclick="addCanal()">+ Adicionar canal</button><button class="btn" onclick="resetPremissas()">Restaurar padrão</button><button class="btn pri" onclick="savePremissas()">Salvar premissas</button>`)
-    + (fora.length?`<div class="note" style="margin-bottom:12px">Canais removidos (as regras continuam guardadas): ${fora.map(id=>`<b>${esc(MARKETPLACES_BASE.find(m=>m.id===id)?.nome||id)}</b> <button class="btn sm" style="margin:0 10px 0 4px" onclick="restauraNativo('${id}')">Restaurar</button>`).join('')}</div>`:'')
-    + (semRegra.filter(n=>!nativoPorNome(n)).length?`<div class="note" style="margin-bottom:12px">Encontrado no Anymarket sem regras: ${semRegra.filter(n=>!nativoPorNome(n)).map(n=>`<b>${esc(n)}</b> <button class="btn sm" style="margin:0 10px 0 4px" onclick="novoCanal('${esc(n).replace(/'/g,"\\'")}')">Cadastrar regras</button>`).join('')}</div>`:'')
+    + (semRegra.filter(n=>!canalPorNome(n,P)).length?`<div class="note" style="margin-bottom:12px">Encontrado no Anymarket sem regras: ${semRegra.filter(n=>!canalPorNome(n,P)).map(n=>`<b>${esc(n)}</b> <button class="btn sm" style="margin:0 10px 0 4px" onclick="novoCanal('${esc(n).replace(/'/g,"\\'")}')">Cadastrar regras</button>`).join('')}</div>`:'')
     + eleg + `<div class="sec-t" style="margin-top:18px">Canais</div>` + shopee + meli + magalu + canaisExtraHTML(P);
   if (S.focoId){ const el=document.getElementById('pb-'+S.focoId); S.focoId=null; if(el){ el.scrollIntoView({behavior:'smooth',block:'start'}); el.querySelector('.pb-c input')?.focus({preventScroll:true}); } }
 }
 /* bloco de premissas que encolhe e expande */
 function premBloco(k, titulo, resumo, acoes, corpo){
   const ab = !!S.premAberto[k];
-  return `<div class="card pb ${ab?'':'fechado'}" id="pb-${esc(k)}">
+  const off = ((S.Pd||S.P).canais_removidos||[]).includes(k);
+  return `<div class="card pb ${ab?'':'fechado'} ${off?'off':''}" id="pb-${esc(k)}">
     <div class="pb-h" onclick="togPB('${esc(k)}')"><span class="pb-ch">▸</span><div class="pb-t">${titulo}<div class="pb-r">${resumo}</div></div>
     <div class="pb-a" onclick="event.stopPropagation()">${acoes}<button class="btn sm pb-b" onclick="togPB('${esc(k)}')">${ab?'▴ Encolher':'▾ Expandir'}</button></div></div>
     <div class="pb-c">${corpo}</div></div>`;
@@ -1669,9 +1673,10 @@ function canaisExtraHTML(P){
     const t = tabelaVigente(c), tp = tipoFreteExtra(t);
     const salvo = (S.P.canais_extra||[]).some(x=>x.id===c.id);
     const frTxt = tp==='matriz' ? `frete por peso e faixa de preço · ${(t.faixas_peso||[]).filter(x=>x<1e8).length} pesos × ${(t.precos_inicio||[]).length} faixas de preço` : tp==='peso' ? `frete por peso · ${(t.faixas_peso||[]).length} faixas de peso` : 'sem frete';
-    const resumo = `Comissão ${c.com==null||c.com===''?'—':fP(Number(c.com),1)}${Number(c.fixo)?' + fixo '+fR(Number(c.fixo)):''} · ${frTxt}${salvo?'':' · <b style="color:#a32221">ainda não salvo</b>'}`;
+    const off = (P.canais_removidos||[]).includes(c.id);
+    const resumo = `${off?'<b style="color:#a32221">Desligado</b> · ':''}Comissão ${c.com==null||c.com===''?'—':fP(Number(c.com),1)}${Number(c.fixo)?' + fixo '+fR(Number(c.fixo)):''} · ${frTxt}${salvo?'':' · <b style="color:#a32221">ainda não salvo</b>'}`;
     return premBloco(c.id, premTit(c.id, c.nome||'Novo canal', c), resumo,
-      `<button class="btn sm" onclick="rmCanal(${i})">Remover canal</button>`, `
+      off ? `<button class="btn sm lime" onclick="religaCanal('${c.id}')">Religar canal</button>` : `<button class="btn sm" onclick="desligaCanal('${c.id}')">Desligar canal</button>`, `
       <div class="mh">Comissão e taxas</div>
       <div class="form-grid">
         <div class="fld"><label>Comissão</label>${num(`canais_extra.${i}.com`,c.com,'0.001','0,16')}<div class="hint">Em decimal: 0,16 = 16%</div></div>
@@ -1734,19 +1739,27 @@ function subirIcone(i, input){
 }
 function editCanais(fn, foco){ S.Pd = readPremissas(); S.Pd.canais_extra ||= []; fn(S.Pd.canais_extra); if (foco!=null){ const c=S.Pd.canais_extra[foco]; if(c){ S.focoId=c.id; (S.premAberto ||= {})[c.id]=true; } } renderPremissas(); }
 function addCanal(nome=''){ editCanais(c=>c.push({ id:'x_'+Date.now().toString(36), nome, anymarket:nome, sigla:nome.split(' ')[0]||'', cor_fundo:'#52514e', cor_fonte:'#ffffff', com:null, fixo:0, tipo_frete:'nenhum', faixas_peso:[], valores:[] }), (S.Pd?.canais_extra||S.P.canais_extra||[]).length); }
-function rmCanal(i){ if(!confirm('Remover este canal? Ele sai das abas e do resumo depois de salvar.')) return; editCanais(c=>c.splice(i,1)); }
+function rmCanal(i){ const c=(S.Pd||S.P).canais_extra[i]; if (c) desligaCanal(c.id); }
 function addFaixa(i){ editCanais(c=>{ const o=frObj(c[i]); (o.faixas_peso||=[]).push(null); (o.valores||=[]).push(null); if(tipoFreteExtra(o)==='matriz') (o.tabela||=[]).push((o.precos_inicio||[0]).map(()=>null)); }); }
 function rmFaixa(i,j){ editCanais(c=>{ const o=frObj(c[i]); (o.faixas_peso||[]).splice(j,1); (o.valores||[]).splice(j,1); (o.tabela||[]).splice(j,1); }); }
-function nativoPorNome(n){ const t=String(n||'').trim().toLowerCase(); return MARKETPLACES_BASE.find(m=>m.any.some(a=>t===a||t.includes(a))); }
-function rmNativo(id){
-  const nome = MARKETPLACES_BASE.find(m=>m.id===id)?.nome || id;
-  if (!confirm(`Remover o canal ${nome}? Ele sai das abas, do resumo e dos cálculos depois de salvar. As regras e tabelas de frete ficam guardadas: dá para restaurar depois.`)) return;
-  S.Pd = readPremissas(); S.Pd.canais_removidos = [...new Set([...(S.Pd.canais_removidos||[]), id])]; renderPremissas(); toast('Clique em Salvar premissas para confirmar');
+/* canal (da implantação ou cadastrado) pelo nome do Anymarket */
+function canalPorNome(n, P=S.P){
+  const t=String(n||'').trim().toLowerCase();
+  const nat = MARKETPLACES_BASE.find(m=>m.any.some(a=>t===a||t.includes(a)));
+  if (nat) return nat.id;
+  const ex = (P.canais_extra||[]).find(c=>String(c.anymarket||c.nome||'').trim().toLowerCase()===t);
+  return ex ? ex.id : null;
 }
-function restauraNativo(id){ S.Pd = readPremissas(); S.Pd.canais_removidos = (S.Pd.canais_removidos||[]).filter(x=>x!==id); (S.premAberto ||= {})[id]=true; S.focoId=id; renderPremissas(); toast('Clique em Salvar premissas para confirmar'); }
+const canalDesligado = (n) => { const id=canalPorNome(n); return id && (S.P.canais_removidos||[]).includes(id) ? id : null; };
+const nomeCanal = (id, P=S.P) => MARKETPLACES_BASE.find(m=>m.id===id)?.nome || (P.canais_extra||[]).find(c=>c.id===id)?.nome || id;
+function desligaCanal(id){
+  if (!confirm(`Desligar o canal ${nomeCanal(id, S.Pd||S.P)}? Depois de salvar, ele sai das abas, do resumo, do catálogo, dos kits e da precificação. As regras e tabelas de frete continuam aqui em Premissas e dá para religar quando quiser.`)) return;
+  S.Pd = readPremissas(); S.Pd.canais_removidos = [...new Set([...(S.Pd.canais_removidos||[]), id])]; (S.premAberto ||= {})[id]=false; renderPremissas(); toast('Clique em Salvar premissas para confirmar', 4000);
+}
+function religaCanal(id){ S.Pd = readPremissas(); S.Pd.canais_removidos = (S.Pd.canais_removidos||[]).filter(x=>x!==id); (S.premAberto ||= {})[id]=true; S.focoId=id; renderPremissas(); toast('Clique em Salvar premissas para confirmar', 4000); }
 function novoCanal(nome){
-  const nat = nativoPorNome(nome);
-  if (nat){ if (S.tab!=='premissas'){ S.Pd=null; S.tab='premissas'; buildNav(); render(); } restauraNativo(nat.id); return; }
+  const off = canalDesligado(nome);
+  if (off){ if (S.tab!=='premissas'){ S.Pd=null; S.tab='premissas'; buildNav(); render(); } religaCanal(off); return; }
   if (S.tab!=='premissas'){ S.Pd=null; S.tab='premissas'; buildNav(); render(); }
   const ja = (S.Pd.canais_extra||[]).findIndex(c=>String(c.anymarket||c.nome).trim().toLowerCase()===nome.trim().toLowerCase());
   if (ja>=0){ const c=S.Pd.canais_extra[ja]; S.focoId=c.id; (S.premAberto ||= {})[c.id]=true; renderPremissas(); return; }
@@ -1842,7 +1855,7 @@ async function maisCargas(){
   renderCargas(); setTimeout(()=>$('#histCard').scrollIntoView({block:'end'}),0);
 }
 /* ---------- Tabelas de frete com vigência ---------- */
-function canaisComFrete(){ const fora=S.P.canais_removidos||[]; return [['meli','Mercado Livre'],['magalu','Magalu']].filter(c=>!fora.includes(c[0])).concat((S.P.canais_extra||[]).map(c=>[c.id,c.nome])); }
+function canaisComFrete(){ const fora=S.P.canais_removidos||[]; return [['meli','Mercado Livre'],['magalu','Magalu'], ...(S.P.canais_extra||[]).map(c=>[c.id,c.nome])].filter(c=>!fora.includes(c[0])); }
 function freteObj(P,id){ return id==='meli'||id==='magalu' ? P[id] : canalExtra(P,id); }
 function freteCardHTML(){
   const sel = S.freteCanal || 'meli', hoje = hojeISO();
@@ -2096,7 +2109,7 @@ function renderKits(){
   <div class="card" id="kitList">
     <div class="card-h" style="margin-bottom:10px"><div><h3 id="kitTit"></h3><div class="sub" style="margin:0">Clique no kit para ver a composição · clique na comissão para ver o cálculo</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="editarKit(-1)">+ Criar kit</button><button class="btn lime" onclick="exportKits()">Exportar para Excel</button></div></div>
     <div class="filters">
-      <input type="search" id="kq" placeholder="Buscar kit, arquivo de origem ou SKU" value="${esc(f.q)}">
+      <input type="search" id="kq" placeholder="Buscar SKU do kit, nome, arquivo de origem ou SKU do componente" value="${esc(f.q)}">
       <select id="korig"><option value="">Todas as origens</option>${[...new Set(S.kitsCalc.map(k=>k.origem||'Sem origem'))].sort().map(o=>`<option ${f.orig===o?'selected':''}>${esc(o)}</option>`).join('')}</select>
       <select id="ksit"><option value="">Todos os kits</option><option value="eleg" ${f.sit==='eleg'?'selected':''}>Só elegíveis</option><option value="prob" ${f.sit==='prob'?'selected':''}>Com problema</option>${MARKETPLACES.map(mm=>`<option value="v:${mm.id}" ${f.sit==='v:'+mm.id?'selected':''}>Viável no ${esc(mm.nome)}</option>`).join('')}</select>
     </div>
@@ -2114,7 +2127,7 @@ function kitRows(){
     if (f.sit==='eleg' && !k.elegivel) return false;
     if (f.sit==='prob' && k.elegivel) return false;
     if (f.sit.startsWith('v:') && !k.mp[f.sit.slice(2)]?.viavel) return false;
-    if (q && !k.kit.toLowerCase().includes(q) && !(k.origem||'').toLowerCase().includes(q) && !k.itens.some(i=>i.sku.toLowerCase().includes(q)||i.descricao.toLowerCase().includes(q))) return false;
+    if (q && !k.kit.toLowerCase().includes(q) && !(k.codigo||'').toLowerCase().includes(q) && !(k.origem||'').toLowerCase().includes(q) && !k.itens.some(i=>i.sku.toLowerCase().includes(q)||i.descricao.toLowerCase().includes(q))) return false;
     return true;
   });
 }
@@ -2123,12 +2136,12 @@ function drawKits(){
   f.sel ||= new Set(); [...f.sel].forEach(n=>{ if(!S.kitsCalc.some(k=>k.kit===n)) f.sel.delete(n); });
   const todosSel = rows.length>0 && rows.every(k=>f.sel.has(k.kit));
   const muitos = MARKETPLACES.length > 3;
-  const cols=[[`<input type="checkbox" class="chk" title="Selecionar todos os kits da lista" ${todosSel?'checked':''} onchange="selKitTodos(this.checked)">`,'34px','c'],['Kit','auto'],['Itens','4%','n'],['Preço sugerido (R$)','6.5%','n'],['Valor avulso (R$)','6.5%',muitos?'n hxl':'n hs'],['Kit vs avulso','5.5%',muitos?'n hxl':'n hs'],['Peso (kg)','5%','n'],['Kits possíveis','5.5%',muitos?'n hl':'n hx'],...MARKETPLACES.map(mm=>[thCanal(mm.id),(muitos?5.6:19.5/MARKETPLACES.length).toFixed(1)+'%','n']),['Situação',muitos?'11%':'13%',''],['','112px','']];
+  const cols=[[`<input type="checkbox" class="chk" title="Selecionar todos os kits da lista" ${todosSel?'checked':''} onchange="selKitTodos(this.checked)">`,'34px','c'],['SKU do kit','7%'],['Kit','auto'],['Itens','4%','n'],['Preço sugerido (R$)','6.5%','n'],['Valor avulso (R$)','6.5%',muitos?'n hxl':'n hs'],['Kit vs avulso','5.5%',muitos?'n hxl':'n hs'],['Peso (kg)','5%','n'],['Kits possíveis','5.5%',muitos?'n hl':'n hx'],...MARKETPLACES.map(mm=>[thCanal(mm.id),(muitos?5.6:19.5/MARKETPLACES.length).toFixed(1)+'%','n']),['Situação',muitos?'10%':'12%',''],['','112px','']];
   $('#kitTit').textContent = `Kits — ${fN(rows.length)}`;
   $('#kitTable').innerHTML = `<table class="tbl hw resp"><colgroup>${cols.map(c=>`<col class="${(c[2]||'').replace('n','').trim()}" style="width:${c[1]}">`).join('')}</colgroup>
   <thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${c[0]}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(k=>{ const i=S.kitsCalc.indexOf(k), aberto=!!f.open[k.kit];
-    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td class="c" onclick="event.stopPropagation()"><input type="checkbox" class="chk" ${f.sel.has(k.kit)?'checked':''} onchange="selKit(${i},this.checked)"></td><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b>${k.origem?`<div class="muted" style="font-size:11.5px;margin:2px 0 0 14px">${esc(k.origem)}</div>`:''}</td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n ${muitos?'hxl':'hs'}">${fM(k.avulso)}</td><td class="n ${muitos?'hxl':'hs'}">${k.desconto==null||!(k.preco>0)?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n ${muitos?'hl':'hx'}">${fN(k.disponiveis)}</td>
+    const linha = `<tr class="kitrow" onclick="togKit(${i})"><td class="c" onclick="event.stopPropagation()"><input type="checkbox" class="chk" ${f.sel.has(k.kit)?'checked':''} onchange="selKit(${i},this.checked)"></td><td class="mono">${k.codigo?esc(k.codigo):'<span class="muted" title="Sem SKU / código do kit">—</span>'}</td><td><b>${aberto?'▾':'▸'} ${esc(k.kit)}</b>${k.origem?`<div class="muted" style="font-size:11.5px;margin:2px 0 0 14px">${esc(k.origem)}</div>`:''}</td><td class="n">${fN(k.n)}</td><td class="n">${fM(k.preco)}</td><td class="n ${muitos?'hxl':'hs'}">${fM(k.avulso)}</td><td class="n ${muitos?'hxl':'hs'}">${k.desconto==null||!(k.preco>0)?'—':(k.desconto<0?'+':'−')+fN(Math.abs(k.desconto)*100,1)+'%'}</td><td class="n">${fN(k.peso,3)}</td><td class="n ${muitos?'hl':'hx'}">${fN(k.disponiveis)}</td>
       ${MARKETPLACES.map(mm=>{ const d=k.mp[mm.id]; return `<td class="n"><a class="lnk" style="color:${d.pct==null?'inherit':d.pct>lim?'#a32221':'#005c00'};font-weight:600" onclick="event.stopPropagation();detalheKit(${i},'${mm.id}')">${fP(d.pct)}</a> ${d.viavel?'✓':''}</td>`; }).join('')}
       <td>${k.elegivel?'<span class="pill ok">Elegível</span>':`<span class="sit" style="color:#a32221">${esc(k.problemas.join(' · '))}</span>`}</td>
       <td class="c" onclick="event.stopPropagation()"><button class="btn sm" onclick="editarKit(${i})">Editar</button> <button class="btn sm" title="Excluir kit" onclick="excluirKit(${i})">×</button></td></tr>`;
@@ -2154,13 +2167,13 @@ async function excluirSelecionados(){
 /* --- criar / editar kit --- */
 function editarKit(i){
   const k = i>=0 ? S.kitsCalc[i] : null;
-  S.kitEd = { orig: k ? k.kit : null, kit: k ? k.kit : '', preco: k ? k.preco : null,
+  S.kitEd = { orig: k ? k.kit : null, kit: k ? k.kit : '', codigo: k ? (k.codigo||'') : '', preco: k ? k.preco : null,
     itens: k ? k.itens.map(c=>({ sku:c.sku, quantidade:c.quantidade, descricao:c.descricao })) : [{ sku:'', quantidade:1, descricao:'' }] };
   desenhaEditorKit();
 }
 function leEditorKit(){
   const E=S.kitEd; if(!$('#keNome')) return E;
-  E.kit=$('#keNome').value.trim(); E.preco=num($('#kePreco').value);
+  E.kit=$('#keNome').value.trim(); E.codigo=$('#keCod').value.trim(); E.preco=num($('#kePreco').value);
   E.itens=[...document.querySelectorAll('#keItens tr')].map(tr=>({ sku:tr.querySelector('.ke-sku').value.trim(), quantidade:num(tr.querySelector('.ke-qtd').value)||0, descricao:tr.dataset.desc||'' }));
   return E;
 }
@@ -2200,7 +2213,8 @@ function desenhaEditorKit(foco){
   if (!$('#skusList')){ const dl=document.createElement('datalist'); dl.id='skusList'; dl.innerHTML=S.produtos.filter(p=>String(p.seller_id)===String(S.P.seller_id)).map(p=>`<option value="${esc(p.sku)}">${esc(p.name)}</option>`).join(''); document.body.appendChild(dl); }
   const inp='border:1px solid var(--line);border-radius:8px;padding:6px 8px;width:100%';
   modal(`<h2>${E.orig?'Editar kit':'Criar kit'}</h2>
-    <div class="form-grid" style="grid-template-columns:2fr 1fr;margin:10px 0 14px">
+    <div class="form-grid" style="grid-template-columns:1fr 2fr 1fr;margin:10px 0 14px">
+      <div class="fld"><label>SKU / código do kit</label><input id="keCod" value="${esc(E.codigo||'')}" placeholder="Ex.: KIT-0001" style="${inp};font-family:ui-monospace,monospace"></div>
       <div class="fld"><label>Nome do kit</label><input id="keNome" value="${esc(E.kit)}" placeholder="Ex.: Kit Pedreiro Básico" style="${inp}"></div>
       <div class="fld"><label>Preço sugerido (R$)</label><input id="kePreco" type="number" step="0.01" value="${E.preco??''}" oninput="atualizaEditorKit()" style="${inp}"></div>
     </div>
@@ -2225,19 +2239,30 @@ async function salvarKit(){
   const err = !E.kit ? 'Dê um nome ao kit.' : !(E.preco>0) ? 'Informe o preço sugerido.' : !itens.length ? 'Inclua pelo menos um componente.'
     : itens.some(i=>!(i.quantidade>0)) ? 'A quantidade precisa ser maior que zero.'
     : (E.kit!==E.orig && S.kits.some(k=>k.kit.toLowerCase()===E.kit.toLowerCase())) ? 'Já existe um kit com esse nome.'
+    : (E.codigo && S.kits.some(k=>k.kit!==E.orig && (k.codigo||'').toLowerCase()===E.codigo.toLowerCase())) ? 'Já existe outro kit com esse SKU / código.'
     : new Set(itens.map(i=>i.sku)).size!==itens.length ? 'Há SKU repetido: some as quantidades numa linha só.' : '';
   if (err){ $('#keErr').textContent=err; return; }
   const origem = (E.orig && S.kits.find(k=>k.kit===E.orig)?.origem) || 'Criado na tela';
-  const rows = itens.map(i=>({ kit:E.kit, sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao||'', quantidade:i.quantidade, preco_sugerido:E.preco, peso:null, origem }));
+  const rows = itens.map(i=>({ kit:E.kit, codigo:E.codigo||null, sku:i.sku, descricao:base.get(i.sku)?.name||i.descricao||'', quantidade:i.quantidade, preco_sugerido:E.preco, peso:null, origem }));
   try{
     if (!S.local){
       const nomes=[E.kit, ...(E.orig&&E.orig!==E.kit?[E.orig]:[])];
       const { error:e1 } = await S.sb.from('mc_kits').delete().in('kit', nomes); if (e1) throw e1;
-      const { error:e2 } = await S.sb.from('mc_kits').insert(rows); if (e2) throw e2;
+      await insereKits(rows);
     }
     S.kits = [...S.kits.filter(k=>k.kit!==E.kit && k.kit!==E.orig), ...rows];
     $('#modalHost').innerHTML=''; recalc(); S.f.kits ||= { q:'', sit:'', open:{} }; S.f.kits.open[E.kit]=true; renderKits(); toast(E.orig?'Kit atualizado':'Kit criado');
   } catch(e){ console.error(e); $('#keErr').textContent='Erro ao salvar: '+(e.message||e); }
+}
+/* grava linhas de kit; se o banco ainda não tem a coluna "codigo" (falta a v5), grava sem ela e avisa */
+async function insereKits(rows){
+  const { error } = await S.sb.from('mc_kits').insert(rows);
+  if (!error) return;
+  if (/codigo/i.test(error.message||'')){
+    const { error:e2 } = await S.sb.from('mc_kits').insert(rows.map(({codigo, ...r})=>r)); if (e2) throw e2;
+    toast('Kit gravado sem o SKU do kit: rode o supabase_atualizacao_v5.sql no Supabase para guardar esse código', 9000); return;
+  }
+  throw error;
 }
 async function excluirKit(i){
   const k=S.kitsCalc[i]; if(!confirm('Excluir o kit “'+k.kit+'”?')) return;
@@ -2247,23 +2272,23 @@ async function excluirKit(i){
 function togKit(i){ const k=S.kitsCalc[i]; S.f.kits.open[k.kit]=!S.f.kits.open[k.kit]; drawKits(); }
 function detalheKit(i, mp){
   const k=S.kitsCalc[i], d=k.mp[mp];
-  modal(`<h2>${icoHTML(mp,'lg')}${esc(k.kit)}</h2><p style="margin:4px 0 8px">${fN(k.n)} componentes · peso do kit ${fN(k.peso,3)} kg · ${k.elegivel?'elegível':'com problema: '+esc(k.problemas.join(' · '))}</p>
+  modal(`<h2>${icoHTML(mp,'lg')}${k.codigo?`<span class="mono" style="font-size:15px">${esc(k.codigo)}</span> · `:''}${esc(k.kit)}</h2><p style="margin:4px 0 8px">${fN(k.n)} componentes · peso do kit ${fN(k.peso,3)} kg · ${k.elegivel?'elegível':'com problema: '+esc(k.problemas.join(' · '))}</p>
     <div class="mh">Como chegamos na comissão estimada no ${esc(MPN[mp])}</div>${tabelaCusto(d, k.preco)}`);
 }
 function exportKits(){
   const rows = kitRows();
   const wb = XLSX.utils.book_new();
-  const kits = rows.map(k=>{ const o={ 'Kit':k.kit, 'Origem':k.origem||'', 'Itens':k.n, 'Unidades':k.unidades, 'Preço sugerido':k.preco, 'Valor avulso':k.avulso, 'Kit vs avulso %':k.desconto==null?null:Math.round(-k.desconto*10000)/10000, 'Peso (kg)':k.peso, 'Kits possíveis':k.disponiveis, 'Elegível':k.elegivel?'Sim':'Não', 'Situação':k.problemas.join(' · ')||'Elegível' };
+  const kits = rows.map(k=>{ const o={ 'SKU do kit':k.codigo||'', 'Kit':k.kit, 'Origem':k.origem||'', 'Itens':k.n, 'Unidades':k.unidades, 'Preço sugerido':k.preco, 'Valor avulso':k.avulso, 'Kit vs avulso %':k.desconto==null?null:Math.round(-k.desconto*10000)/10000, 'Peso (kg)':k.peso, 'Kits possíveis':k.disponiveis, 'Elegível':k.elegivel?'Sim':'Não', 'Situação':k.problemas.join(' · ')||'Elegível' };
     for (const mm of MARKETPLACES){ const d=k.mp[mm.id]; o[mm.nome+' - comissão estimada %']=d.pct==null?null:Math.round(d.pct*10000)/10000; o[mm.nome+' - taxa (R$)']=d.com!=null?Math.round(d.com*k.preco*100)/100:null; o[mm.nome+' - fixo (R$)']=d.fixo??null; o[mm.nome+' - frete (R$)']=d.frete??null; o[mm.nome+' - viável']=d.viavel?'Sim':'Não'; }
     return o; });
-  const comp = rows.flatMap(k=>k.itens.map(c=>({ 'Kit':k.kit, 'Origem':k.origem||'', 'SKU':c.sku, 'Componente':c.produto?.name||c.descricao, 'Quantidade':c.quantidade, 'Preço Por':c.preco_unit, 'Subtotal':c.preco_unit==null?null:Math.round(c.preco_unit*c.quantidade*100)/100, 'Peso unitário (kg)':c.peso_unit, 'Estoque':c.estoque, 'Kits possíveis':c.disponiveis, 'Status no site':c.produto?c.produto.status:'Fora da base' })));
+  const comp = rows.flatMap(k=>k.itens.map(c=>({ 'SKU do kit':k.codigo||'', 'Kit':k.kit, 'Origem':k.origem||'', 'SKU':c.sku, 'Componente':c.produto?.name||c.descricao, 'Quantidade':c.quantidade, 'Preço Por':c.preco_unit, 'Subtotal':c.preco_unit==null?null:Math.round(c.preco_unit*c.quantidade*100)/100, 'Peso unitário (kg)':c.peso_unit, 'Estoque':c.estoque, 'Kits possíveis':c.disponiveis, 'Status no site':c.produto?c.produto.status:'Fora da base' })));
   for (const [nome, data] of [['Kits',kits],['Composições',comp]]){ const ws=XLSX.utils.json_to_sheet(data); if(data.length){ ws['!cols']=Object.keys(data[0]).map(k=>({wch:Math.min(50,Math.max(k.length+2,...data.slice(0,200).map(r=>String(r[k]??'').length)))})); ws['!autofilter']={ref:ws['!ref']}; } XLSX.utils.book_append_sheet(wb, ws, nome); }
   XLSX.writeFile(wb, 'MATCON_Kits_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 /* --- carga de kits --- */
 function kitCardHTML(){
   return `<div class="card" id="kitCard" style="margin-bottom:16px">
-    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">Kit, SKU, Descrição, Quantidade, Preço sugerido</span> (uma linha por componente). O peso vem da base de produtos. Kits com o mesmo nome são substituídos; os demais, inclusive os criados na tela, continuam.</div>
+    <h3>Kits e composições</h3><div class="sub">Planilha com as colunas <span class="mono">SKU do kit, Kit, SKU, Descrição, Quantidade, Preço sugerido</span> (uma linha por componente; o SKU do kit também pode vir como “Código do kit”). O peso vem da base de produtos. Kits com o mesmo nome são substituídos; os demais, inclusive os criados na tela, continuam.</div>
     <div class="filters"><label class="btn lime" style="margin:0">Escolher planilha de kits<input type="file" id="kitFile" accept=".xlsx,.xls,.csv" class="hidden"></label>
     <span class="muted" style="font-size:12px">${S.kits.length?fN(new Set(S.kits.map(k=>k.kit)).size)+' kits carregados hoje no painel':'Nenhum kit carregado'}</span></div>
     <div id="kitStatus"></div>
@@ -2283,12 +2308,15 @@ async function lerKits(file){
       break;
     }
     if (!rows || !rows.length){ st.innerHTML='<div class="err">Não encontrei as colunas Kit, SKU e Quantidade.</div>'; return; }
+    // o SKU do kit pode vir só na primeira linha do kit: replica para as demais
+    const codKit = {}; rows.forEach(r=>{ if (r.codigo && !codKit[r.kit]) codKit[r.kit]=r.codigo; }); rows.forEach(r=>{ r.codigo = codKit[r.kit] || null; });
+    const semCod = [...new Set(rows.filter(r=>!r.codigo).map(r=>r.kit))];
     const base = new Set(S.produtos.map(p=>p.sku));
     const fora = [...new Set(rows.filter(r=>!base.has(r.sku)).map(r=>r.sku))];
     const nk = new Set(rows.map(r=>r.kit)).size;
     const semPreco = [...new Set(rows.map(r=>r.kit))].filter(k=>!rows.some(r=>r.kit===k && r.preco_sugerido>0));
     S.kitNovo = { arquivo:file.name, rows };
-    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b>: ${fN(nk)} kits, ${fN(rows.length)} componentes.${fora.length?` <span class="err" style="display:inline">${fN(fora.length)} SKU(s) fora da base: ${fora.slice(0,10).map(esc).join(', ')}${fora.length>10?'…':''}</span>`:' Todos os componentes estão na base.'}${semPreco.length?`<div class="err">${fN(semPreco.length)} kit(s) sem preço sugerido: ${semPreco.slice(0,5).map(esc).join(', ')}${semPreco.length>5?'…':''}</div>`:''}<div class="muted" style="margin-top:4px">Os kits vão ficar identificados pela origem “${esc(file.name)}”.</div></div>
+    st.innerHTML = `<div class="note">✔ <b>${esc(file.name)}</b>: ${fN(nk)} kits, ${fN(rows.length)} componentes${semCod.length===nk?' · <span style="color:#7a5300">planilha sem coluna de SKU do kit</span>':semCod.length?` · <span style="color:#7a5300">${fN(semCod.length)} kit(s) sem SKU do kit</span>`:' · todos com SKU do kit'}.${fora.length?` <span class="err" style="display:inline">${fN(fora.length)} SKU(s) fora da base: ${fora.slice(0,10).map(esc).join(', ')}${fora.length>10?'…':''}</span>`:' Todos os componentes estão na base.'}${semPreco.length?`<div class="err">${fN(semPreco.length)} kit(s) sem preço sugerido: ${semPreco.slice(0,5).map(esc).join(', ')}${semPreco.length>5?'…':''}</div>`:''}<div class="muted" style="margin-top:4px">Os kits vão ficar identificados pela origem “${esc(file.name)}”.</div></div>
       <div style="display:flex;gap:8px;margin-top:10px"><button class="btn lime" onclick="gravarKits()">Confirmar kits</button><button class="btn" onclick="$('#kitStatus').innerHTML=''">Cancelar</button></div>`;
   } catch(e){ console.error(e); st.innerHTML=`<div class="err">Erro ao ler a planilha: ${esc(e.message||e)}</div>`; }
 }
@@ -2300,8 +2328,7 @@ async function gravarKits(){
       if (e1) throw e1;
       const nomes = [...new Set(N.rows.map(r=>r.kit))];
       for (let i=0;i<nomes.length;i+=100){ const { error:e2 } = await S.sb.from('mc_kits').delete().in('kit', nomes.slice(i,i+100)); if (e2) throw e2; }
-      const { error } = await S.sb.from('mc_kits').insert(N.rows.map(r=>({...r, carga_id:c.id})));
-      if (error) throw error;
+      await insereKits(N.rows.map(r=>({...r, carga_id:c.id})));
       S.cargas.unshift(c);
     } else S.cargas.unshift({ tipo:'kits', arquivo:N.arquivo, linhas:N.rows.length, criado_em:new Date().toISOString() });
     const nomesN = new Set(N.rows.map(r=>r.kit));
@@ -2497,7 +2524,7 @@ const pode = a => !!S.perm?.acoes.has(a);
 const PERM_SEL = {
   exportar: '[onclick^="export"]',
   cargas: '#drop, [onclick^="registrarSnapshot"], #freteCard .filters, [onclick^="rmFrete"], [onclick^="gravarFrete"], #kitCard .filters, [onclick^="gravarKits"], [onclick^="rmFila"], #btnConf, [onclick^="irFrete"]',
-  premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick^="rmNativo"], [onclick^="restauraNativo"], [onclick^="addColFrete"], [onclick^="rmColFrete"], [onclick*="novoCanal"], .icone-up',
+  premissas: '[onclick^="savePremissas"], [onclick^="resetPremissas"], [onclick^="addCanal"], [onclick^="rmCanal"], [onclick^="addFaixa"], [onclick^="rmFaixa"], [onclick^="desligaCanal"], [onclick^="religaCanal"], [onclick^="addColFrete"], [onclick^="rmColFrete"], [onclick*="novoCanal"], .icone-up',
   concluir: '[onchange^="toggleAcao"]',
   kits: '[onclick^="editarKit"], [onclick^="excluirKit"], [onclick^="salvarKit"], [onchange^="selKit"], #kitRodape'
 };
